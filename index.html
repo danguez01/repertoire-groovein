@@ -82,7 +82,7 @@
   .song-item .badge.style { background: rgba(95, 179, 224, 0.15); color: var(--chord); }
 
   /* === CENTER PANEL === */
-  .center { display: flex; flex-direction: column; overflow: hidden; }
+  .center { display: flex; flex-direction: column; overflow: hidden; position: relative; min-width: 0; }
   .center-header { padding: 14px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; background: var(--bg-elev); flex-wrap: wrap; }
   .song-title { font-size: 22px; font-weight: 600; flex: 1; margin: 0; letter-spacing: -0.4px; }
   .meta-pill { padding: 4px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; font-size: 12px; color: var(--text-dim); }
@@ -154,7 +154,69 @@
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
-  @media (max-width: 1100px) { .app { grid-template-columns: 280px 1fr; } .right { display: none; } }
+  /* === SIDEBAR TOGGLE === */
+  .sidebar-toggle { font-size: 20px !important; padding: 4px 10px !important; margin-right: 6px; }
+  /* Desktop : repli en réduisant la colonne gauche */
+  .app.sidebar-collapsed { grid-template-columns: 0 1fr 300px; }
+  .app.sidebar-collapsed .left { display: none; }
+  @media (max-width: 1100px) {
+    .app.sidebar-collapsed { grid-template-columns: 0 1fr; }
+  }
+  /* Mobile : la sidebar devient un panneau coulissant en overlay */
+  @media (max-width: 700px) {
+    .app { grid-template-columns: 1fr; }
+    .app .right { display: none; }
+    .app .left {
+      position: fixed; top: 0; left: 0; bottom: 0;
+      width: 86vw; max-width: 340px; z-index: 200;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      box-shadow: 6px 0 24px rgba(0,0,0,0.6);
+      display: flex !important;
+    }
+    .app.sidebar-open .left { transform: translateX(0); }
+    .app.sidebar-open::after {
+      content: ""; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.55); z-index: 150;
+    }
+    .center-body { padding: 18px 18px 100px; }
+    .center-header { padding: 10px 14px; gap: 6px; flex-wrap: wrap; }
+    .song-title { font-size: 16px !important; }
+  }
+
+  /* === AUTO-SCROLL CONTROLS (téléprompteur) === */
+  .scroll-controls {
+    position: absolute; bottom: 18px; right: 24px;
+    display: flex; gap: 6px; align-items: center;
+    background: rgba(35, 44, 54, 0.92); backdrop-filter: blur(8px);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 10px; z-index: 50;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+  }
+  .scroll-controls .sc-btn {
+    background: transparent; border: 0; color: var(--text);
+    width: 34px; height: 34px; border-radius: 50%;
+    font-size: 16px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  .scroll-controls .sc-btn:hover { background: var(--bg-elev2); color: var(--accent); }
+  .scroll-controls.playing #scroll-toggle { background: var(--accent); color: var(--bg); }
+  .scroll-controls .sc-speed {
+    min-width: 56px; text-align: center;
+    color: var(--text-dim); font-size: 12px;
+    font-variant-numeric: tabular-nums; padding: 0 4px;
+    letter-spacing: 0.3px;
+  }
+  .scroll-controls .sc-speed::after { content: " px/s"; opacity: 0.65; }
+  .app.stage .scroll-controls { bottom: 28px; right: 32px; }
+  @media (max-width: 700px) {
+    .scroll-controls { bottom: 14px; right: 14px; padding: 4px 8px; }
+    .scroll-controls .sc-btn { width: 38px; height: 38px; font-size: 17px; }
+    .scroll-controls .sc-speed { min-width: 48px; }
+  }
+
+  @media (max-width: 1100px) { .app:not(.sidebar-collapsed) { grid-template-columns: 280px 1fr; } .right { display: none; } }
 </style>
 </head>
 <body>
@@ -190,6 +252,7 @@
   <!-- CENTER: SONG VIEW -->
   <main class="center">
     <div class="center-header">
+      <button class="btn icon ghost sidebar-toggle stage-hide" id="sidebar-toggle" onclick="toggleSidebar()" title="Afficher/masquer la liste des chansons" aria-label="Menu">☰</button>
       <h2 class="song-title"><span id="song-title">—</span><span class="pencil stage-hide" id="title-edit" onclick="editCurrentTitle()" title="Modifier le titre" style="display:none">✎</span><span class="pencil pencil-body stage-hide" id="body-edit" onclick="editCurrentBody()" title="Modifier paroles et accords" style="display:none">✎ Texte</span></h2>
       <span class="meta-pill stage-hide" id="meta-key"></span>
       <span class="meta-pill stage-hide" id="meta-capo"></span>
@@ -208,6 +271,13 @@
     </div>
     <div class="center-body" id="song-body">
       <div class="empty">Sélectionnez une chanson dans la liste à gauche.</div>
+    </div>
+    <div class="scroll-controls" id="scroll-controls" style="display:none">
+      <button class="sc-btn" id="scroll-toggle" onclick="toggleAutoScroll()" title="Lecture / pause (Espace)">▶</button>
+      <button class="sc-btn" onclick="changeScrollSpeed(-5)" title="Plus lent (−)">−</button>
+      <span class="sc-speed" id="scroll-speed-label">25</span>
+      <button class="sc-btn" onclick="changeScrollSpeed(5)" title="Plus rapide (+)">+</button>
+      <button class="sc-btn sc-reset" onclick="resetScroll()" title="Retour en haut">⤴</button>
     </div>
   </main>
 
@@ -734,11 +804,14 @@ function renderSong() {
     if (bodyEditPencil) bodyEditPencil.style.display = "none";
     ["meta-key","meta-capo","meta-style","meta-bpm","meta-chords"].forEach(id => setVisible(id, ""));
     bodyEl.innerHTML = `<div class="empty">Sélectionnez une chanson dans la liste à gauche.<div class="hint">Astuce : utilisez ＋ pour ajouter une chanson en collant son texte, ou ⚙ pour connecter votre fichier .xlsx Drive.</div></div>`;
+    showScrollControls(false);
     return;
   }
   titleEl.textContent = song.title;
   if (pencil) pencil.style.display = "";
   if (bodyEditPencil) bodyEditPencil.style.display = "";
+  showScrollControls(true);
+  updateScrollUI();
   const keyDisplay = song.key_detected ? (state.transposeSteps !== 0 ? transposeChord(song.key_detected, state.transposeSteps) + " (transp.)" : song.key_detected) : "";
   setVisible("meta-key", keyDisplay ? `Tonalité : <strong>${keyDisplay}</strong>` : "");
   setVisible("meta-capo", song.capo ? `Capo : <strong>${song.capo}</strong>` : "");
@@ -1108,6 +1181,9 @@ function discardChanges() {
 function selectSong(id) {
   state.currentSongId = id;
   state.transposeSteps = 0;
+  resetScroll();
+  // Sur mobile : refermer la sidebar automatiquement après sélection
+  if (window.innerWidth <= 700) document.getElementById("app").classList.remove("sidebar-open");
   renderSongList();
   renderSong();
   renderSetlist();
@@ -1119,6 +1195,78 @@ function toggleStage() {
   document.getElementById("app").classList.toggle("stage");
   if (document.getElementById("app").classList.contains("stage")) state.fontSize = Math.max(state.fontSize, 18);
   renderSong();
+}
+
+// ===== SIDEBAR TOGGLE =====
+function toggleSidebar() {
+  const app = document.getElementById("app");
+  if (window.innerWidth <= 700) {
+    app.classList.toggle("sidebar-open");
+  } else {
+    app.classList.toggle("sidebar-collapsed");
+  }
+}
+
+// ===== AUTO-SCROLL (téléprompteur) =====
+const scrollState = { playing: false, speed: 25, lastTs: null, raf: null, residual: 0 };
+
+function showScrollControls(show) {
+  const el = document.getElementById("scroll-controls");
+  if (el) el.style.display = show ? "flex" : "none";
+}
+
+function updateScrollUI() {
+  const wrap = document.getElementById("scroll-controls");
+  const tgl = document.getElementById("scroll-toggle");
+  const lbl = document.getElementById("scroll-speed-label");
+  if (!wrap) return;
+  if (scrollState.playing) { wrap.classList.add("playing"); tgl.textContent = "⏸"; tgl.title = "Pause (Espace)"; }
+  else { wrap.classList.remove("playing"); tgl.textContent = "▶"; tgl.title = "Lecture (Espace)"; }
+  if (lbl) lbl.textContent = String(scrollState.speed);
+}
+
+function scrollFrame(ts) {
+  if (!scrollState.playing) { scrollState.raf = null; return; }
+  const el = document.getElementById("song-body");
+  if (!el) { scrollState.playing = false; updateScrollUI(); return; }
+  if (scrollState.lastTs != null) {
+    const dt = (ts - scrollState.lastTs) / 1000;
+    const px = scrollState.speed * dt + scrollState.residual;
+    const whole = Math.floor(px);
+    scrollState.residual = px - whole;
+    el.scrollTop += whole;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) {
+      scrollState.playing = false;
+      updateScrollUI();
+      scrollState.raf = null;
+      return;
+    }
+  }
+  scrollState.lastTs = ts;
+  scrollState.raf = requestAnimationFrame(scrollFrame);
+}
+
+function toggleAutoScroll() {
+  scrollState.playing = !scrollState.playing;
+  scrollState.lastTs = null;
+  scrollState.residual = 0;
+  if (scrollState.playing) scrollState.raf = requestAnimationFrame(scrollFrame);
+  updateScrollUI();
+}
+
+function changeScrollSpeed(delta) {
+  scrollState.speed = Math.max(5, Math.min(200, scrollState.speed + delta));
+  updateScrollUI();
+}
+
+function resetScroll() {
+  scrollState.playing = false;
+  scrollState.lastTs = null;
+  scrollState.residual = 0;
+  if (scrollState.raf) { cancelAnimationFrame(scrollState.raf); scrollState.raf = null; }
+  const el = document.getElementById("song-body");
+  if (el) el.scrollTop = 0;
+  updateScrollUI();
 }
 function addCurrentToSetlist() {
   if (!state.currentSongId) return;
@@ -1281,17 +1429,44 @@ if (state.gasUrl) {
 })();
 
 document.addEventListener("keydown", e => {
+  // Ne pas intercepter les touches quand on saisit du texte
+  const tag = (e.target && e.target.tagName) || "";
+  const isTyping = tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable);
+
   if (e.key === "Escape") {
     if (document.getElementById("settings-modal").classList.contains("show")) closeSettings();
     else if (document.getElementById("add-modal").classList.contains("show")) closeAddSong();
+    else if (document.getElementById("app").classList.contains("sidebar-open")) document.getElementById("app").classList.remove("sidebar-open");
     else { document.getElementById("app").classList.remove("stage"); renderSong(); }
   }
+
+  // Téléprompteur : Espace = play/pause, +/- = vitesse, R = reset (uniquement si une chanson est affichée et qu'on ne saisit pas)
+  if (state.currentSongId && !isTyping) {
+    if (e.code === "Space") { e.preventDefault(); toggleAutoScroll(); return; }
+    if (e.key === "+" || e.key === "=") { e.preventDefault(); changeScrollSpeed(5); return; }
+    if (e.key === "-" || e.key === "_") { e.preventDefault(); changeScrollSpeed(-5); return; }
+    if (e.key === "r" || e.key === "R") { e.preventDefault(); resetScroll(); return; }
+  }
+
   if (document.getElementById("app").classList.contains("stage")) {
     const sl = state.setlists[state.currentSetlistId];
     if (!sl || sl.songIds.length === 0) return;
     let idx = sl.songIds.indexOf(state.currentSongId);
     if (e.key === "ArrowRight" || e.key === "PageDown") { if (idx < sl.songIds.length - 1) selectSong(sl.songIds[idx + 1]); }
     else if (e.key === "ArrowLeft" || e.key === "PageUp") { if (idx > 0) selectSong(sl.songIds[idx - 1]); }
+  }
+});
+
+// Cliquer sur le voile derrière la sidebar mobile → la fermer
+document.addEventListener("click", e => {
+  const app = document.getElementById("app");
+  if (!app.classList.contains("sidebar-open")) return;
+  if (window.innerWidth > 700) return;
+  // Si le clic est en dehors de la sidebar et du bouton hamburger
+  const left = document.querySelector(".left");
+  const toggle = document.getElementById("sidebar-toggle");
+  if (left && !left.contains(e.target) && toggle && !toggle.contains(e.target)) {
+    app.classList.remove("sidebar-open");
   }
 });
 </script>
