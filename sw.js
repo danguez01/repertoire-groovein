@@ -2,7 +2,7 @@
 // Le numéro de version est synchronisé avec BUILD_VERSION du HTML.
 // À chaque nouveau build, le cache est invalidé et l'app se rafraîchit.
 
-const VERSION = "20260508-2046";
+const VERSION = "20260510-0858";
 const CACHE_NAME = "groove-in-" + VERSION;
 
 // Ressources à pré-cacher au moment de l'install
