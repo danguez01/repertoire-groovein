@@ -324,6 +324,24 @@ HTML = r"""<!DOCTYPE html>
   .modal .close { float: right; cursor: pointer; color: var(--text-dim); font-size: 22px; line-height: 1; }
   .modal .close:hover { color: var(--accent); }
 
+  /* === FICHE INFOS === */
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  .info-grid > div { min-width: 0; }
+  .info-grid input, .info-grid select, #info-tags {
+    width: 100%; padding: 9px 11px; background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); border-radius: 5px; font-size: 16px; outline: none; font-family: inherit; min-height: 42px;
+  }
+  .info-grid input:focus, .info-grid select:focus, #info-tags:focus { border-color: var(--accent); }
+  .info-hint { color: var(--text-dim); font-size: 11.5px; margin-top: 4px; }
+  .tag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag-chip { padding: 5px 11px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg); color: var(--text-dim); font-size: 12.5px; cursor: pointer; font-family: inherit; }
+  .tag-chip.on { background: var(--accent); border-color: var(--accent); color: #1a1208; font-weight: 600; }
+  @media (max-width: 480px) { .info-grid { grid-template-columns: 1fr; } }
+  #toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px); opacity: 0; pointer-events: none;
+    background: var(--bg-elev2); border: 1px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 9998; transition: opacity .2s, transform .2s; max-width: 90vw; text-align: center; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.ok { border-color: var(--ok); } #toast.err { border-color: var(--err); color: var(--err); }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -461,7 +479,7 @@ HTML = r"""<!DOCTYPE html>
   <main class="center">
     <div class="center-header">
       <button class="btn icon ghost sidebar-toggle stage-hide" id="sidebar-toggle" onclick="toggleSidebar()" title="Afficher/masquer la liste des chansons" aria-label="Menu">☰</button>
-      <h2 class="song-title"><span id="song-title">—</span><span class="pencil stage-hide" id="title-edit" onclick="editCurrentTitle()" title="Modifier le titre" style="display:none">✎</span><span class="pencil pencil-body stage-hide" id="body-edit" onclick="editCurrentBody()" title="Modifier paroles et accords" style="display:none">✎ Texte</span></h2>
+      <h2 class="song-title"><span id="song-title">—</span><span class="pencil stage-hide" id="title-edit" onclick="editCurrentTitle()" title="Modifier le titre" style="display:none">✎</span><span class="pencil pencil-body stage-hide" id="body-edit" onclick="editCurrentBody()" title="Modifier paroles et accords" style="display:none">✎ Texte</span><span class="pencil pencil-body stage-hide" id="info-edit" onclick="openInfoModal()" title="Modifier genre, capo, tonalité, BPM, tags…" style="display:none">ⓘ Infos</span></h2>
       <span class="meta-pill stage-hide" id="meta-key"></span>
       <span class="meta-pill stage-hide" id="meta-capo"></span>
       <span class="meta-pill style stage-hide" id="meta-style"></span>
@@ -553,6 +571,33 @@ F   C   G   Am
 </div>
 
 <!-- SINGERS CONFIG MODAL -->
+<div id="toast"></div>
+<!-- FICHE INFOS -->
+<div class="modal-bg" id="info-modal">
+  <div class="modal" style="max-width:600px;">
+    <span class="close" onclick="closeInfoModal()">&#xd7;</span>
+    <h2>ⓘ Infos — <span id="info-title"></span></h2>
+    <div class="info-grid">
+      <div><label for="info-genre">Genre</label><input id="info-genre" type="text" list="dl-genre" autocomplete="off"></div>
+      <div><label for="info-style">Style</label><input id="info-style" type="text" list="dl-style" autocomplete="off"></div>
+      <div><label for="info-rythme">Rythme</label><input id="info-rythme" type="text" list="dl-rythme" autocomplete="off"></div>
+      <div><label for="info-bpm">BPM</label><input id="info-bpm" type="number" inputmode="numeric" min="30" max="300" placeholder="ex. 90"></div>
+      <div><label for="info-capo">Capo</label><select id="info-capo"></select></div>
+      <div><label for="info-key">Tonalité jouée</label><input id="info-key" type="text" list="dl-key" autocomplete="off"><div class="info-hint" id="info-key-hint"></div></div>
+      <div><label for="info-duree">Durée</label><input id="info-duree" type="text" inputmode="numeric" placeholder="ex. 3:45" autocomplete="off"></div>
+      <div><label for="info-niveau">Niveau</label><select id="info-niveau"></select></div>
+    </div>
+    <label for="info-tags">Tags concert</label>
+    <input id="info-tags" type="text" placeholder="ex. mariage, cocktail" autocomplete="off" oninput="syncTagChips()">
+    <div class="tag-chips" id="info-tag-chips"></div>
+    <datalist id="dl-genre"></datalist><datalist id="dl-style"></datalist><datalist id="dl-rythme"></datalist><datalist id="dl-key"></datalist>
+    <div class="btn-row" style="margin-top:20px">
+      <button class="btn primary" onclick="saveInfo()">✓ Enregistrer</button>
+      <button class="btn ghost" onclick="closeInfoModal()">Annuler</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="singers-modal">
   <div class="modal">
     <span class="close" onclick="closeSingersModal()">&#xd7;</span>
@@ -1206,7 +1251,7 @@ function renderSongList() {
   el.innerHTML = state.filtered.map(s => {
     const active = s.id === state.currentSongId ? "active" : "";
     const capo = s.capo ? `<span class="badge">Capo ${s.capo}</span>` : "";
-    const key = s.key_detected ? `<span class="badge">${s.key_detected}</span>` : "";
+    const key = songKey(s) ? `<span class="badge">${escapeHtml(songKey(s))}</span>` : "";
     const style = s.style ? `<span class="badge style">${escapeHtml(s.style)}</span>` : "";
     return `<div class="song-item ${active}" onclick="selectSong(${s.id})">
       <div class="title">${escapeHtml(s.title)}</div>
@@ -1227,6 +1272,7 @@ function renderSong() {
     titleEl.textContent = "—";
     if (pencil) pencil.style.display = "none";
     if (bodyEditPencil) bodyEditPencil.style.display = "none";
+    const infoEditEl0 = document.getElementById("info-edit"); if (infoEditEl0) infoEditEl0.style.display = "none";
     const singersBtnEl = document.getElementById("singers-btn"); if (singersBtnEl) singersBtnEl.style.display = "none";
     ["meta-key","meta-capo","meta-style","meta-bpm","meta-chords"].forEach(id => setVisible(id, ""));
     bodyEl.innerHTML = `<div class="empty">Sélectionnez une chanson dans la liste à gauche.<div class="hint">Astuce : utilisez ＋ pour ajouter une chanson en collant son texte, ou ⚙ pour connecter votre fichier .xlsx Drive.</div></div>`;
@@ -1236,11 +1282,12 @@ function renderSong() {
   titleEl.textContent = song.title;
   if (pencil) pencil.style.display = "";
   if (bodyEditPencil) bodyEditPencil.style.display = "";
+  const infoEditEl1 = document.getElementById("info-edit"); if (infoEditEl1) infoEditEl1.style.display = "";
   const singersBtnEl2 = document.getElementById("singers-btn"); if (singersBtnEl2) singersBtnEl2.style.display = "";
   if (state.singerAssignMode) renderSingerPalette();
   showScrollControls(true);
   updateScrollUI();
-  const keyDisplay = song.key_detected ? (state.transposeSteps !== 0 ? transposeChord(song.key_detected, state.transposeSteps) + " (transp.)" : song.key_detected) : "";
+  const keyDisplay = songKey(song) ? (state.transposeSteps !== 0 ? transposeChord(songKey(song), state.transposeSteps) + " (transp.)" : songKey(song)) : "";
   setVisible("meta-key", keyDisplay ? `Tonalité : <strong>${keyDisplay}</strong>` : "");
   setVisible("meta-capo", song.capo ? `Capo : <strong>${song.capo}</strong>` : "");
   setVisible("meta-style", song.style ? `<strong>${escapeHtml(song.style)}</strong>` : "");
@@ -1555,7 +1602,7 @@ function saveNewSong() {
     const existing = state.songs.find(s => s.id === state.editingId);
     if (!existing) { alert("Chanson introuvable."); state.editingId = null; return; }
     existing.title = parsed.title;
-    existing.capo = parsed.capo;
+    existing.capo = parsed.capo || existing.capo || null;
     existing.chords = parsed.chords;
     existing.n_chords = parsed.n_chords;
     existing.n_lines = parsed.n_lines;
@@ -1887,7 +1934,7 @@ function renderSetlistFlow() {
       return;
     }
     const meta = [];
-    const keyDisplay = song.key_detected ? (state.transposeSteps !== 0 ? transposeChord(song.key_detected, state.transposeSteps) + " (transp.)" : song.key_detected) : "";
+    const keyDisplay = songKey(song) ? (state.transposeSteps !== 0 ? transposeChord(songKey(song), state.transposeSteps) + " (transp.)" : songKey(song)) : "";
     if (keyDisplay) meta.push(`Tonalité <strong>${keyDisplay}</strong>`);
     if (song.capo) meta.push(`Capo <strong>${song.capo}</strong>`);
     if (song.bpm) meta.push(`<strong>${escapeHtml(String(song.bpm))} BPM</strong>`);
@@ -1927,7 +1974,7 @@ function exportSetlist() {
   sl.songIds.forEach((sid, i) => {
     const s = state.songs.find(x => x.id === sid);
     if (!s) return;
-    lines.push(`${i+1}. ${s.title}${s.key_detected ? "  ["+s.key_detected+"]" : ""}${s.capo ? "  (Capo "+s.capo+")" : ""}`);
+    lines.push(`${i+1}. ${s.title}${songKey(s) ? "  ["+songKey(s)+"]" : ""}${s.capo ? "  (Capo "+s.capo+")" : ""}`);
   });
   const text = lines.join("\n");
   if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => alert("Setlist copiée ✓\n\n" + text)).catch(() => alert(text));
@@ -1960,12 +2007,12 @@ function applyFilters() {
   const fs = document.getElementById("filter-style").value;
   const ft = document.getElementById("filter-tag").value.toLowerCase();
   state.filtered = state.songs.filter(s => {
-    if (fk && (s.key_detected || "") !== fk) return false;
+    if (fk && (songKey(s) || "") !== fk) return false;
     if (fc && String(s.capo || "") !== fc) return false;
     if (fs && (s.style || "") !== fs) return false;
     if (ft && !(s.tags || "").toLowerCase().includes(ft)) return false;
     if (!q) return true;
-    const hay = [s.title, s.key_detected, (s.chords || []).join(" "), s.body_full, s.style, s.genre, s.tags, s.notes].join(" ").toLowerCase();
+    const hay = [s.title, s.key_detected, s.key_played, (s.chords || []).join(" "), s.body_full, s.style, s.genre, s.tags, s.notes].join(" ").toLowerCase();
     return hay.includes(q);
   });
   renderSongList();
@@ -1979,13 +2026,129 @@ function populateFilterOptions() {
     sel.innerHTML = placeholder + values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
     sel.value = current;
   };
-  fillSelect("filter-key", [...new Set(state.songs.map(s => s.key_detected).filter(Boolean))].sort());
+  fillSelect("filter-key", [...new Set(state.songs.map(s => songKey(s)).filter(Boolean))].sort());
   fillSelect("filter-capo", [...new Set(state.songs.map(s => s.capo).filter(Boolean))].sort((a,b)=>a-b).map(String));
   fillSelect("filter-style", [...new Set(state.songs.map(s => s.style).filter(Boolean))].sort());
   // Tags: split comma-separated values
   const tagSet = new Set();
   state.songs.forEach(s => (s.tags || "").split(/[,;]/).map(t => t.trim()).filter(Boolean).forEach(t => tagSet.add(t)));
   fillSelect("filter-tag", [...tagSet].sort());
+}
+
+
+// ===== FICHE INFOS (genre, style, rythme, BPM, capo, tonalité jouée, durée, niveau, tags) =====
+// Tonalité affichée = celle que tu as saisie (jouée) si elle existe, sinon la détection automatique.
+function songKey(s) { return (s && (s.key_played || s.key_detected)) || ""; }
+
+const REF_DEFAULTS = {
+  style:  ["Variété française", "Pop", "Rock", "Soul / R&B", "Funk", "Jazz", "Reggae", "Disco", "Latin", "Chanson", "Ballade"],
+  genre:  ["Français", "Anglais", "Hébreu", "Espagnol", "Instrumental"],
+  rythme: ["4/4 medium", "4/4 lent", "Bossa", "Reggae", "Slow", "Shuffle", "Disco", "Cha-cha", "Rumba", "Valse"],
+  niveau: ["Maîtrisé", "À revoir", "En apprentissage"],
+  key:    ["C","Cm","C#","C#m","D","Dm","D#","D#m","E","Em","F","Fm","F#","F#m","G","Gm","G#","G#m","A","Am","A#","A#m","B","Bm"],
+};
+// Valeurs déjà utilisées dans le répertoire d'abord (les plus fréquentes), puis les suggestions par défaut
+function refValues(field, stateField) {
+  const counts = {};
+  state.songs.forEach(s => { const v = String(s[stateField || field] || "").trim(); if (v) counts[v] = (counts[v] || 0) + 1; });
+  const used = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+  const lower = new Set(used.map(v => v.toLowerCase()));
+  return used.concat((REF_DEFAULTS[field] || []).filter(v => !lower.has(v.toLowerCase())));
+}
+function fillDatalist(id, values) {
+  document.getElementById(id).innerHTML = values.map(v => `<option value="${escapeHtml(v)}"></option>`).join("");
+}
+function fillInfoSelect(id, values, current, emptyLabel) {
+  const vals = current && !values.includes(current) ? [current].concat(values) : values;
+  document.getElementById(id).innerHTML = `<option value="">${emptyLabel}</option>` + vals.map(v => `<option value="${escapeHtml(String(v))}">${escapeHtml(String(v))}</option>`).join("");
+  document.getElementById(id).value = current || "";
+}
+function parseTagList(str) { return String(str || "").split(/[,;]/).map(t => t.trim()).filter(Boolean); }
+
+function openInfoModal() {
+  const song = state.songs.find(s => s.id === state.currentSongId);
+  if (!song) { alert("Sélectionnez d'abord une chanson."); return; }
+  document.getElementById("info-title").textContent = song.title;
+  document.getElementById("info-genre").value = song.genre || "";
+  document.getElementById("info-style").value = song.style || "";
+  document.getElementById("info-rythme").value = song.rythme || "";
+  document.getElementById("info-bpm").value = song.bpm || "";
+  document.getElementById("info-key").value = song.key_played || "";
+  document.getElementById("info-duree").value = song.duree || "";
+  document.getElementById("info-tags").value = song.tags || "";
+  fillDatalist("dl-genre", refValues("genre"));
+  fillDatalist("dl-style", refValues("style"));
+  fillDatalist("dl-rythme", refValues("rythme"));
+  fillDatalist("dl-key", REF_DEFAULTS.key);
+  fillInfoSelect("info-capo", ["1","2","3","4","5","6","7","8","9","10","11","12"], song.capo ? String(song.capo) : "", "Sans capo");
+  fillInfoSelect("info-niveau", refValues("niveau"), song.niveau || "", "—");
+  document.getElementById("info-key-hint").textContent = song.key_detected ? `Détectée automatiquement : ${song.key_detected}` : "";
+  const tagMap = new Map(); // dédoublonnage insensible à la casse (rock / Rock)
+  state.songs.forEach(s => parseTagList(s.tags).forEach(t => { if (!tagMap.has(t.toLowerCase())) tagMap.set(t.toLowerCase(), t); }));
+  ["mariage","cocktail","bal","concert intime","bar","festival"].forEach(t => { if (!tagMap.has(t.toLowerCase())) tagMap.set(t.toLowerCase(), t); });
+  const allTags = tagMap.values();
+  document.getElementById("info-tag-chips").innerHTML = [...allTags].sort((a, b) => a.localeCompare(b)).map(t =>
+    `<button type="button" class="tag-chip" data-tag="${escapeHtml(t)}" onclick="toggleTagChip(this.dataset.tag)">${escapeHtml(t)}</button>`).join("");
+  syncTagChips();
+  document.getElementById("info-modal").classList.add("show");
+}
+function closeInfoModal() { document.getElementById("info-modal").classList.remove("show"); }
+function syncTagChips() {
+  const on = new Set(parseTagList(document.getElementById("info-tags").value).map(t => t.toLowerCase()));
+  document.querySelectorAll("#info-tag-chips .tag-chip").forEach(c => c.classList.toggle("on", on.has(c.dataset.tag.toLowerCase())));
+}
+function toggleTagChip(tag) {
+  const inp = document.getElementById("info-tags");
+  const list = parseTagList(inp.value);
+  const i = list.findIndex(t => t.toLowerCase() === tag.toLowerCase());
+  if (i >= 0) list.splice(i, 1); else list.push(tag);
+  inp.value = list.join(", ");
+  syncTagChips();
+}
+
+function showToast(kind, msg) {
+  const el = document.getElementById("toast");
+  el.className = "show " + kind; el.textContent = msg;
+  clearTimeout(showToast._t); showToast._t = setTimeout(() => el.classList.remove("show"), 2800);
+}
+
+async function gasPushFields(song, fields) {
+  // N'envoie au Sheet QUE les champs modifiés (le texte de la chanson n'est pas retouché)
+  if (state.source !== "gas" || !state.gasUrl || !song.id) return;
+  state.gasSyncing = true; renderDirtyBar();
+  try {
+    await gasPost({ action: "update_song", id: song.id, fields });
+    state.dirty = false;
+    showToast("ok", "✓ Enregistré dans le Sheet");
+  } catch (e) {
+    console.error("Push infos GAS échoué :", e);
+    showToast("err", "Sauvegarde Sheet échouée : " + e.message);
+    state.dirty = true;
+  } finally {
+    state.gasSyncing = false; renderDirtyBar();
+  }
+}
+
+function saveInfo() {
+  const song = state.songs.find(s => s.id === state.currentSongId);
+  if (!song) return;
+  const val = id => document.getElementById(id).value.trim();
+  const bpmRaw = val("info-bpm"), capoRaw = val("info-capo");
+  const bpm = bpmRaw === "" ? "" : Math.round(Number(bpmRaw));
+  if (bpmRaw !== "" && !(bpm >= 30 && bpm <= 300)) { alert("BPM : entrez un nombre entre 30 et 300."); return; }
+  const duree = val("info-duree");
+  if (duree && !/^\d{1,2}:[0-5]\d$/.test(duree)) { alert("Durée : utilisez le format minutes:secondes, par exemple 3:45."); return; }
+  const fields = {
+    genre: val("info-genre"), style: val("info-style"), rythme: val("info-rythme"),
+    bpm: bpm, capo: capoRaw === "" ? "" : Number(capoRaw),
+    key_played: val("info-key"), duree: duree, niveau: val("info-niveau"),
+    tags: parseTagList(val("info-tags")).join(", "),
+  };
+  Object.assign(song, fields, { capo: fields.capo === "" ? null : fields.capo });
+  closeInfoModal();
+  refreshAll();
+  if (state.source === "gas") gasPushFields(song, fields);
+  else { markDirty(); showToast("ok", "✓ Enregistré (pense à télécharger le .xlsx)"); }
 }
 
 // ===== CHANTEURS =====
@@ -2204,6 +2367,7 @@ document.addEventListener("keydown", e => {
     const app = document.getElementById("app");
     if (document.getElementById("settings-modal").classList.contains("show")) closeSettings();
     else if (document.getElementById("add-modal").classList.contains("show")) closeAddSong();
+    else if (document.getElementById("info-modal").classList.contains("show")) closeInfoModal();
     else if (document.getElementById("singers-modal").classList.contains("show")) closeSingersModal();
     else if (app.classList.contains("singer-assign-mode")) exitSingerAssignMode();
     else if (app.classList.contains("sidebar-open") || app.classList.contains("setlist-open")) app.classList.remove("sidebar-open", "setlist-open");
