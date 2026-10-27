@@ -366,9 +366,18 @@ HTML = r"""<!DOCTYPE html>
     .song-title { font-size: 17px !important; }
     .controls { flex-wrap: wrap; }
   }
-  @media (max-width: 1100px) {
-    .center-header { padding-top: calc(8px + env(safe-area-inset-top)); }
+  /* Zones sûres (encoche, barre d'état, barre du bas) : le bouton Scène/quitter reste toujours cliquable */
+  .center-header {
+    padding-top: calc(8px + env(safe-area-inset-top));
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
   }
+  .app.stage .center-header {
+    padding-top: calc(10px + env(safe-area-inset-top));
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  .app.stage .song-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* Tactile : zones de toucher confortables (>= 40px) */
   @media (pointer: coarse) {
