@@ -113,7 +113,11 @@ HTML = r"""<!DOCTYPE html>
   .filters .row { display: flex; gap: 6px; }
   .filters .row > * { flex: 1; }
   .song-list { flex: 1; overflow-y: auto; padding: 4px 0; }
-  .song-item { padding: 9px 16px; cursor: pointer; border-left: 3px solid transparent; transition: background 0.1s; }
+  .song-item { padding: 9px 40px 9px 16px; cursor: pointer; border-left: 3px solid transparent; transition: background 0.1s; position: relative; }
+  .song-del { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); padding: 8px 10px; font-size: 14px; line-height: 1; opacity: 0.3; border-radius: 6px; cursor: pointer; }
+  .song-item:hover .song-del { opacity: 0.7; }
+  .song-del:hover { opacity: 1 !important; background: rgba(224, 122, 95, 0.18); }
+  @media (pointer: coarse) { .song-del { opacity: 0.5; padding: 12px 12px; } }
   .song-item:hover { background: var(--bg-elev2); }
   .song-item.active { background: var(--bg-elev2); border-left-color: var(--accent); }
   .song-item .title { font-size: 13.5px; font-weight: 500; }
@@ -1256,6 +1260,7 @@ function renderSongList() {
     return `<div class="song-item ${active}" onclick="selectSong(${s.id})">
       <div class="title">${escapeHtml(s.title)}</div>
       <div class="meta">${key}${capo}${style}</div>
+      <span class="song-del" onclick="event.stopPropagation(); deleteSongById(${s.id})" title="Supprimer cette chanson" aria-label="Supprimer">🗑</span>
     </div>`;
   }).join("");
   document.getElementById("count-songs").textContent = state.filtered.length;
@@ -2149,6 +2154,42 @@ function saveInfo() {
   refreshAll();
   if (state.source === "gas") gasPushFields(song, fields);
   else { markDirty(); showToast("ok", "✓ Enregistré (pense à télécharger le .xlsx)"); }
+}
+
+
+// ===== SUPPRESSION D'UNE CHANSON (liste de gauche) =====
+async function deleteSongById(id) {
+  const song = state.songs.find(s => s.id === id);
+  if (!song) return;
+  const inSets = Object.values(state.setlists || {}).filter(sl => (sl.songIds || []).includes(id)).length;
+  const msg = `Supprimer « ${song.title} » ?\n\n`
+    + (state.source === "gas" ? "Elle sera aussi supprimée du Google Sheet. " : "")
+    + (inSets ? `Elle sera retirée de ${inSets} setlist${inSets > 1 ? "s" : ""}. ` : "")
+    + "Cette action est définitive.";
+  if (!confirm(msg)) return;
+  // 1) d'abord le Sheet : si ça échoue, on ne touche à rien en local
+  if (state.source === "gas" && state.gasUrl) {
+    state.gasSyncing = true; renderDirtyBar();
+    try {
+      await gasPost({ action: "delete_song", id: id });
+    } catch (e) {
+      state.gasSyncing = false; renderDirtyBar();
+      if (!/introuvable/i.test(e.message)) {   // « ID introuvable » = déjà supprimée dans le Sheet : on continue
+        showToast("err", "Suppression impossible : " + e.message);
+        return;
+      }
+    }
+    state.gasSyncing = false; renderDirtyBar();
+  }
+  // 2) puis en local : liste, setlists, chanteurs
+  state.songs = state.songs.filter(s => s.id !== id);
+  Object.values(state.setlists || {}).forEach(sl => { sl.songIds = (sl.songIds || []).filter(x => x !== id); });
+  delete state.songSingers[id];
+  if (state.currentSongId === id) state.currentSongId = null;
+  saveToStorage();                       // sauvegarde aussi les setlists nettoyées (sync Sheet)
+  if (state.source !== "gas") markDirty();
+  refreshAll();
+  showToast("ok", state.source === "gas" ? "✓ Chanson supprimée (Sheet à jour)" : "✓ Chanson supprimée (pense à télécharger le .xlsx)");
 }
 
 // ===== CHANTEURS =====
