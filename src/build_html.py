@@ -2489,12 +2489,28 @@ document.addEventListener("keydown", e => {
     if (e.key === "f" || e.key === "F") { e.preventDefault(); toggleFullscreen(); return; }
   }
 
-  if (document.getElementById("app").classList.contains("stage")) {
+  // Pédale / clavier : flèches et Page haut/bas = défilement d'un écran (comme une tourne-page).
+  // Maj + flèche gauche/droite = chanson précédente/suivante de la setlist (mode scène).
+  const modalOpen = document.querySelector(".modal-bg.show");
+  if (state.currentSongId && !isTyping && !modalOpen) {
+    const app = document.getElementById("app");
     const sl = state.setlists[state.currentSetlistId];
-    if (!sl || sl.songIds.length === 0) return;
-    let idx = sl.songIds.indexOf(state.currentSongId);
-    if (e.key === "ArrowRight" || e.key === "PageDown") { if (idx < sl.songIds.length - 1) selectSong(sl.songIds[idx + 1]); }
-    else if (e.key === "ArrowLeft" || e.key === "PageUp") { if (idx > 0) selectSong(sl.songIds[idx - 1]); }
+    if (e.shiftKey && (e.key === "ArrowRight" || e.key === "ArrowLeft") && app.classList.contains("stage") && sl && sl.songIds.length) {
+      const idx = sl.songIds.indexOf(state.currentSongId);
+      const ni = e.key === "ArrowRight" ? idx + 1 : idx - 1;
+      if (ni >= 0 && ni < sl.songIds.length) { e.preventDefault(); selectSong(sl.songIds[ni]); }
+      return;
+    }
+    const down = ["ArrowDown", "PageDown", "ArrowRight"].includes(e.key);
+    const up = ["ArrowUp", "PageUp", "ArrowLeft"].includes(e.key);
+    if ((down || up) && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const el = document.getElementById("song-body");
+      if (el) {
+        e.preventDefault();
+        const step = Math.max(80, Math.round(el.clientHeight * 0.85));
+        el.scrollBy({ top: down ? step : -step, behavior: "smooth" });
+      }
+    }
   }
 });
 
