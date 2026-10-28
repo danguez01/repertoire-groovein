@@ -948,9 +948,10 @@ function normalizeSongFromGAS(s) {
     tags: s.tags || "",
     niveau: s.niveau || "",
     notes: s.notes || "",
-    artiste: s.artiste || "",
-    spotify: s.spotify || "",
-    lien_ecoute: s.lien_ecoute || "",
+    // Tolère l'ancienne version du script (clés = en-têtes bruts du Sheet)
+    artiste: s.artiste || s["Artiste"] || "",
+    spotify: s.spotify || s["Lien Spotify"] || "",
+    lien_ecoute: s.lien_ecoute || s["Lien écoute"] || "",
   };
 }
 
