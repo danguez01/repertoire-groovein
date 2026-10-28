@@ -39,7 +39,10 @@ const FIELD_MAP = {
   "Refrain":           "choruses",
   "Bridge":            "bridges",
   "Body complet":      "body_full",
-  "Notes":             "notes"
+  "Notes":             "notes",
+  "Artiste":           "artiste",
+  "Lien Spotify":      "spotify",
+  "Lien écoute":       "lien_ecoute"
 };
 
 function getSheet_() {

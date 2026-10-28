@@ -20,6 +20,9 @@ for s in songs:
     s.setdefault("niveau", "")
     s.setdefault("notes", "")
     s.setdefault("key_played", "")
+    s.setdefault("artiste", "")
+    s.setdefault("spotify", "")
+    s.setdefault("lien_ecoute", "")
 songs_json = json.dumps(songs, ensure_ascii=False)
 
 HTML = r"""<!DOCTYPE html>
@@ -328,6 +331,12 @@ HTML = r"""<!DOCTYPE html>
   .modal .close { float: right; cursor: pointer; color: var(--text-dim); font-size: 22px; line-height: 1; }
   .modal .close:hover { color: var(--accent); }
 
+  /* === ÉCOUTER === */
+  .btn.listen-spotify { background: #1db954; border-color: #1db954; color: #06210f; font-weight: 600; }
+  .btn.listen-spotify:hover { background: #3ad06e; border-color: #3ad06e; }
+  .song-item .artist { color: var(--text-dim); font-size: 11px; margin-right: 6px; }
+  .meta-pill.artist { background: rgba(244, 162, 97, 0.08); }
+
   /* === FICHE INFOS === */
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
   .info-grid > div { min-width: 0; }
@@ -385,7 +394,8 @@ HTML = r"""<!DOCTYPE html>
   @media (max-width: 700px) {
     .center-body { padding: 14px 14px calc(100px + env(safe-area-inset-bottom)); }
     .center-header { padding: 8px 10px; gap: 6px; flex-wrap: wrap; }
-    .song-title { font-size: 17px !important; }
+    .song-title { font-size: 17px !important; flex: 1 1 100%; }
+    .pencil-body { white-space: nowrap; }
     .controls { flex-wrap: wrap; }
   }
   /* Zones sûres (encoche, barre d'état, barre du bas) : le bouton Scène/quitter reste toujours cliquable */
@@ -484,6 +494,7 @@ HTML = r"""<!DOCTYPE html>
     <div class="center-header">
       <button class="btn icon ghost sidebar-toggle stage-hide" id="sidebar-toggle" onclick="toggleSidebar()" title="Afficher/masquer la liste des chansons" aria-label="Menu">☰</button>
       <h2 class="song-title"><span id="song-title">—</span><span class="pencil stage-hide" id="title-edit" onclick="editCurrentTitle()" title="Modifier le titre" style="display:none">✎</span><span class="pencil pencil-body stage-hide" id="body-edit" onclick="editCurrentBody()" title="Modifier paroles et accords" style="display:none">✎ Texte</span><span class="pencil pencil-body stage-hide" id="info-edit" onclick="openInfoModal()" title="Modifier genre, capo, tonalité, BPM, tags…" style="display:none">ⓘ Infos</span></h2>
+      <span class="meta-pill artist stage-hide" id="meta-artiste"></span>
       <span class="meta-pill stage-hide" id="meta-key"></span>
       <span class="meta-pill stage-hide" id="meta-capo"></span>
       <span class="meta-pill style stage-hide" id="meta-style"></span>
@@ -496,6 +507,9 @@ HTML = r"""<!DOCTYPE html>
         <button class="btn icon ghost" title="Transposer −1" onclick="transpose(-1)">♭</button>
         <button class="btn icon ghost" title="Transposer +1" onclick="transpose(1)">♯</button>
         <button class="btn icon ghost" title="Réinitialiser transposition" onclick="resetTranspose()">⟲</button>
+        <button class="btn listen-spotify stage-hide" id="listen-spotify" onclick="openListen('spotify')" style="display:none" title="Ouvrir dans Spotify">▶ Spotify</button>
+        <button class="btn ghost stage-hide" id="listen-other" onclick="openListen('other')" style="display:none" title="Ouvrir le lien d'écoute">▶ Écouter</button>
+        <button class="btn ghost stage-hide" id="listen-search" onclick="openListen('search')" style="display:none" title="Chercher ce titre dans Spotify">🔎 Écouter</button>
         <button class="btn ghost stage-hide" onclick="addCurrentToSetlist()">+ Setlist</button>
         <button class="btn ghost stage-hide setlist-toggle" onclick="toggleSetlistPanel()" title="Afficher la setlist" aria-label="Setlist">📋 Set</button>
         <button class="btn ghost stage-hide" id="singers-btn" onclick="openSingersModal()" title="Configurer les chanteurs">🎤<span id="singers-btn-count" style="margin-left:3px;font-size:11px;font-weight:700"></span></button>
@@ -582,6 +596,7 @@ F   C   G   Am
     <span class="close" onclick="closeInfoModal()">&#xd7;</span>
     <h2>ⓘ Infos — <span id="info-title"></span></h2>
     <div class="info-grid">
+      <div style="grid-column:1/-1"><label for="info-artiste">Artiste</label><input id="info-artiste" type="text" autocomplete="off" placeholder="ex. Calogero"></div>
       <div><label for="info-genre">Genre</label><input id="info-genre" type="text" list="dl-genre" autocomplete="off"></div>
       <div><label for="info-style">Style</label><input id="info-style" type="text" list="dl-style" autocomplete="off"></div>
       <div><label for="info-rythme">Rythme</label><input id="info-rythme" type="text" list="dl-rythme" autocomplete="off"></div>
@@ -594,6 +609,10 @@ F   C   G   Am
     <label for="info-tags">Tags concert</label>
     <input id="info-tags" type="text" placeholder="ex. mariage, cocktail" autocomplete="off" oninput="syncTagChips()">
     <div class="tag-chips" id="info-tag-chips"></div>
+    <div class="info-grid" style="grid-template-columns:1fr">
+      <div><label for="info-spotify">Lien Spotify</label><input id="info-spotify" type="url" inputmode="url" autocomplete="off" placeholder="https://open.spotify.com/track/…"><div class="info-hint">Dans Spotify : ⋯ → Partager → Copier le lien du titre.</div></div>
+      <div><label for="info-lien">Autre lien d'écoute</label><input id="info-lien" type="url" inputmode="url" autocomplete="off" placeholder="YouTube, Deezer, Apple Music…"></div>
+    </div>
     <datalist id="dl-genre"></datalist><datalist id="dl-style"></datalist><datalist id="dl-rythme"></datalist><datalist id="dl-key"></datalist>
     <div class="btn-row" style="margin-top:20px">
       <button class="btn primary" onclick="saveInfo()">✓ Enregistrer</button>
@@ -929,6 +948,9 @@ function normalizeSongFromGAS(s) {
     tags: s.tags || "",
     niveau: s.niveau || "",
     notes: s.notes || "",
+    artiste: s.artiste || "",
+    spotify: s.spotify || "",
+    lien_ecoute: s.lien_ecoute || "",
   };
 }
 
@@ -1156,6 +1178,9 @@ function parseXlsxArrayBuffer(ab) {
       tags: String(get("Tags concert", "Tags", "tags")),
       niveau: String(get("Niveau", "niveau")),
       notes: String(get("Notes", "notes")),
+      artiste: String(get("Artiste", "artiste")),
+      spotify: String(get("Lien Spotify", "Spotify", "spotify")),
+      lien_ecoute: String(get("Lien écoute", "Lien ecoute", "lien_ecoute")),
       chords,
       n_chords: parseInt(get("Nb accords")) || chords.length,
       n_lines: parseInt(get("Nb lignes")) || 0,
@@ -1259,7 +1284,7 @@ function renderSongList() {
     const style = s.style ? `<span class="badge style">${escapeHtml(s.style)}</span>` : "";
     return `<div class="song-item ${active}" onclick="selectSong(${s.id})">
       <div class="title">${escapeHtml(s.title)}</div>
-      <div class="meta">${key}${capo}${style}</div>
+      <div class="meta">${s.artiste ? `<span class="artist">${escapeHtml(s.artiste)}</span>` : ""}${key}${capo}${style}</div>
       <span class="song-del" onclick="event.stopPropagation(); deleteSongById(${s.id})" title="Supprimer cette chanson" aria-label="Supprimer">🗑</span>
     </div>`;
   }).join("");
@@ -1279,7 +1304,8 @@ function renderSong() {
     if (bodyEditPencil) bodyEditPencil.style.display = "none";
     const infoEditEl0 = document.getElementById("info-edit"); if (infoEditEl0) infoEditEl0.style.display = "none";
     const singersBtnEl = document.getElementById("singers-btn"); if (singersBtnEl) singersBtnEl.style.display = "none";
-    ["meta-key","meta-capo","meta-style","meta-bpm","meta-chords"].forEach(id => setVisible(id, ""));
+    ["meta-artiste","meta-key","meta-capo","meta-style","meta-bpm","meta-chords"].forEach(id => setVisible(id, ""));
+    ["listen-spotify","listen-other","listen-search"].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = "none"; });
     bodyEl.innerHTML = `<div class="empty">Sélectionnez une chanson dans la liste à gauche.<div class="hint">Astuce : utilisez ＋ pour ajouter une chanson en collant son texte, ou ⚙ pour connecter votre fichier .xlsx Drive.</div></div>`;
     showScrollControls(false);
     return;
@@ -1293,6 +1319,8 @@ function renderSong() {
   showScrollControls(true);
   updateScrollUI();
   const keyDisplay = songKey(song) ? (state.transposeSteps !== 0 ? transposeChord(songKey(song), state.transposeSteps) + " (transp.)" : songKey(song)) : "";
+  setVisible("meta-artiste", song.artiste ? `<strong>${escapeHtml(song.artiste)}</strong>` : "");
+  updateListenButtons(song);
   setVisible("meta-key", keyDisplay ? `Tonalité : <strong>${keyDisplay}</strong>` : "");
   setVisible("meta-capo", song.capo ? `Capo : <strong>${song.capo}</strong>` : "");
   setVisible("meta-style", song.style ? `<strong>${escapeHtml(song.style)}</strong>` : "");
@@ -1540,7 +1568,7 @@ function parseSongText(rawText) {
     choruses: join(sections.chorus),
     bridges: join(sections.bridge),
     body_full: body,
-    style: "", genre: "", rythme: "", bpm: "", duree: "", tags: "", niveau: "", notes: "",
+    style: "", genre: "", rythme: "", bpm: "", duree: "", tags: "", niveau: "", notes: "", artiste: "", spotify: "", lien_ecoute: "",
   };
 }
 
@@ -1644,7 +1672,7 @@ function saveNewSong() {
 }
 
 // ===== SAVE AS XLSX =====
-const XLSX_HEADERS = ["ID","Titre","Doublon","Style","Genre","Rythme","BPM","Tonalité (auto)","Tonalité (jouée)","Capo","Durée","Tags concert","Niveau","Accords utilisés","Nb accords","Nb lignes","Intro","Couplets","Pré-refrain","Refrain","Bridge","Body complet","Notes"];
+const XLSX_HEADERS = ["ID","Titre","Doublon","Style","Genre","Rythme","BPM","Tonalité (auto)","Tonalité (jouée)","Capo","Durée","Tags concert","Niveau","Accords utilisés","Nb accords","Nb lignes","Intro","Couplets","Pré-refrain","Refrain","Bridge","Body complet","Notes","Artiste","Lien Spotify","Lien écoute"];
 
 function songToRow(s) {
   return {
@@ -1671,6 +1699,9 @@ function songToRow(s) {
     "Bridge": s.bridges || "",
     "Body complet": s.body_full || "",
     "Notes": s.notes || "",
+    "Artiste": s.artiste || "",
+    "Lien Spotify": s.spotify || "",
+    "Lien écoute": s.lien_ecoute || "",
   };
 }
 
@@ -2017,7 +2048,7 @@ function applyFilters() {
     if (fs && (s.style || "") !== fs) return false;
     if (ft && !(s.tags || "").toLowerCase().includes(ft)) return false;
     if (!q) return true;
-    const hay = [s.title, s.key_detected, s.key_played, (s.chords || []).join(" "), s.body_full, s.style, s.genre, s.tags, s.notes].join(" ").toLowerCase();
+    const hay = [s.title, s.artiste, s.key_detected, s.key_played, (s.chords || []).join(" "), s.body_full, s.style, s.genre, s.tags, s.notes].join(" ").toLowerCase();
     return hay.includes(q);
   });
   renderSongList();
@@ -2074,6 +2105,9 @@ function openInfoModal() {
   const song = state.songs.find(s => s.id === state.currentSongId);
   if (!song) { alert("Sélectionnez d'abord une chanson."); return; }
   document.getElementById("info-title").textContent = song.title;
+  document.getElementById("info-artiste").value = song.artiste || "";
+  document.getElementById("info-spotify").value = song.spotify || "";
+  document.getElementById("info-lien").value = song.lien_ecoute || "";
   document.getElementById("info-genre").value = song.genre || "";
   document.getElementById("info-style").value = song.style || "";
   document.getElementById("info-rythme").value = song.rythme || "";
@@ -2143,7 +2177,17 @@ function saveInfo() {
   if (bpmRaw !== "" && !(bpm >= 30 && bpm <= 300)) { alert("BPM : entrez un nombre entre 30 et 300."); return; }
   const duree = val("info-duree");
   if (duree && !/^\d{1,2}:[0-5]\d$/.test(duree)) { alert("Durée : utilisez le format minutes:secondes, par exemple 3:45."); return; }
+  // Liens : on accepte http(s) et les adresses « spotify:track:… » (converties en lien web)
+  const cleanLink = (v) => {
+    v = (v || "").trim();
+    const m = v.match(/^spotify:(track|album|playlist|artist):([A-Za-z0-9]+)$/i);
+    return m ? `https://open.spotify.com/${m[1].toLowerCase()}/${m[2]}` : v;
+  };
+  const spotify = cleanLink(val("info-spotify")), lien = cleanLink(val("info-lien"));
+  const okLink = v => v === "" || /^https?:\/\/\S+$/i.test(v);
+  if (!okLink(spotify) || !okLink(lien)) { alert("Lien : collez une adresse complète qui commence par https://"); return; }
   const fields = {
+    artiste: val("info-artiste"), spotify: spotify, lien_ecoute: lien,
     genre: val("info-genre"), style: val("info-style"), rythme: val("info-rythme"),
     bpm: bpm, capo: capoRaw === "" ? "" : Number(capoRaw),
     key_played: val("info-key"), duree: duree, niveau: val("info-niveau"),
@@ -2190,6 +2234,25 @@ async function deleteSongById(id) {
   if (state.source !== "gas") markDirty();
   refreshAll();
   showToast("ok", state.source === "gas" ? "✓ Chanson supprimée (Sheet à jour)" : "✓ Chanson supprimée (pense à télécharger le .xlsx)");
+}
+
+
+// ===== ÉCOUTER (Spotify / autre lien / recherche) =====
+function updateListenButtons(song) {
+  const show = (id, on) => { const b = document.getElementById(id); if (b) b.style.display = on ? "" : "none"; };
+  show("listen-spotify", !!song.spotify);
+  show("listen-other", !!song.lien_ecoute);
+  show("listen-search", !song.spotify && !song.lien_ecoute);   // aucun lien saisi : recherche dans Spotify
+}
+function openListen(kind) {
+  const song = state.songs.find(s => s.id === state.currentSongId);
+  if (!song) return;
+  let url = "";
+  if (kind === "spotify") url = song.spotify;
+  else if (kind === "other") url = song.lien_ecoute;
+  else url = "https://open.spotify.com/search/" + encodeURIComponent(((song.artiste || "") + " " + song.title).trim());
+  if (!/^https?:\/\//i.test(url || "")) { showToast("err", "Lien invalide : corrige-le dans « ⓘ Infos »."); return; }
+  window.open(url, "_blank", "noopener");
 }
 
 // ===== CHANTEURS =====
