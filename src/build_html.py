@@ -148,6 +148,10 @@ HTML = r"""<!DOCTYPE html>
   .empty .hint { font-size: 13px; max-width: 400px; line-height: 1.5; }
   pre.song-body { font-family: "JetBrains Mono", "Consolas", "Menlo", monospace; font-size: var(--song-fs, 14px); line-height: 1.55; white-space: pre; overflow-x: auto; margin: 0; color: var(--text); }
   pre.song-body .chord { color: var(--chord); font-weight: 600; }
+  pre.song-body .tab { color: var(--text-dim); }
+  pre.song-body .tab .fret { color: var(--chord); font-weight: 700; }
+  .tab-tools { display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 0; align-items:center; font-size:12px; color:var(--text-dim); }
+  .tab-tools .btn { padding:5px 10px; font-size:12px; }
   pre.song-body .section { color: var(--section); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1em; display: block; }
 
   /* === CHANTEURS (couleurs par ligne) === */
@@ -566,7 +570,12 @@ HTML = r"""<!DOCTYPE html>
     <h2 id="add-modal-title">Ajouter une chanson</h2>
     <p style="color:var(--text-dim);margin:0 0 8px;">Collez le texte de la chanson (titre en première ligne, puis paroles avec accords). La détection est automatique.</p>
     <label for="paste-area">Texte de la chanson</label>
-    <textarea id="paste-area" class="song-input" placeholder="Mon Titre Capo 2
+    <div class="tab-tools">
+      <button class="btn ghost" type="button" onclick="insertTabTemplate(6)" title="Insère une grille de tablature à 6 cordes à l'endroit du curseur">🎸 Insérer une tablature (6 cordes)</button>
+      <button class="btn ghost" type="button" onclick="insertTabTemplate(4)" title="4 cordes (ukulélé, basse)">4 cordes</button>
+      <span>Tape les numéros de case à la place des tirets (ex. <code>e|--0--3--|</code>).</span>
+    </div>
+    <textarea id="paste-area" wrap="off" class="song-input" placeholder="Mon Titre Capo 2
 
 [Intro]
 Am  C  G  D
@@ -1246,6 +1255,17 @@ function isChordLine(trimmed) {
   return chordCount / tokens.length >= 0.6;
 }
 
+// Ligne de tablature : « e|---0--2-|  » ou « E-----3--- »
+function isTabLine(line) {
+  if (!/^\s*([A-Ga-g][#b]?)?\s*(\||[:]?-)/.test(line)) return false;
+  if (!/^\s*[A-Ga-g][#b]?\s*[|:]|^\s*[|]|^\s*[A-Ga-g]?-/.test(line)) return false;
+  if ((line.match(/-/g) || []).length < 3) return false;
+  return /^[\sA-Ga-g#b|:\-0-9hpbrxsv\/\\~^().<>*]+$/.test(line);
+}
+function renderTabLine(line) {
+  return `<span class="tab">${escapeHtml(line).replace(/(\d+)/g, '<span class="fret">$1</span>')}</span>`;
+}
+
 function lineKeyOf(line) { return line.replace(/\s+/g, " ").trim(); }
 
 function renderSongBody(text, steps, songId) {
@@ -1254,9 +1274,10 @@ function renderSongBody(text, steps, songId) {
   const assignments = singersCfg.assignments || {};
   return text.split("\n").map(line => {
     const trimmed = line.trim();
-    if (/^\[?\s*(intro|verse|chorus|bridge|refrain|pont|pre[- ]?chorus|interlude|outro|hook|solo|couplet)\s*\d*\s*:?\s*\]?$/i.test(trimmed)) {
+    if (/^\[?\s*(intro|verse|chorus|bridge|refrain|pont|pre[- ]?chorus|interlude|outro|hook|solo|couplet|arp[eè]ges?|tab)\s*\d*\s*:?\s*\]?$/i.test(trimmed)) {
       return `<span class="section">${escapeHtml(line)}</span>`;
     }
+    if (isTabLine(line)) return renderTabLine(line);
     if (isChordLine(trimmed)) {
       const transposed = steps !== 0 ? transposeChord(line, steps) : line;
       return `<span class="chord">${escapeHtml(transposed)}</span>`;
@@ -1595,6 +1616,20 @@ function editCurrentBody() {
   updateParsePreview();
   document.getElementById("add-modal").classList.add("show");
   setTimeout(() => document.getElementById("paste-area").focus(), 50);
+}
+
+function insertTabTemplate(n) {
+  const names = n === 4 ? ["G","C","E","A"] : ["e","B","G","D","A","E"];
+  const dash = "-".repeat(32);
+  const grid = (n === 4 ? "[Arpège]" : "[Solo]") + "\n" + names.map(s => s + "|" + dash + "|").join("\n") + "\n";
+  const ta = document.getElementById("paste-area");
+  const a = ta.selectionStart || 0, b = ta.selectionEnd || 0;
+  const before = ta.value.slice(0, a), after = ta.value.slice(b);
+  const pre = before && !before.endsWith("\n\n") ? (before.endsWith("\n") ? "\n" : "\n\n") : "";
+  ta.value = before + pre + grid + "\n" + after;
+  const pos = (before + pre).length + (n === 4 ? "[Arpège]\n".length : "[Solo]\n".length) + 2;
+  ta.focus(); ta.setSelectionRange(pos, pos);
+  updateParsePreview();
 }
 
 function closeAddSong() { document.getElementById("add-modal").classList.remove("show"); }
