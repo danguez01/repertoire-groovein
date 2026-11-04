@@ -2542,7 +2542,7 @@ document.addEventListener("keydown", e => {
       const el = document.getElementById("song-body");
       if (el) {
         e.preventDefault();
-        const step = Math.max(80, Math.round(el.clientHeight * 0.85));
+        const step = Math.max(80, Math.round(el.clientHeight * 0.45));
         el.scrollBy({ top: down ? step : -step, behavior: "smooth" });
       }
     }
