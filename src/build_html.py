@@ -89,7 +89,7 @@ HTML = r"""<!DOCTYPE html>
   .status ol, .status ul { color: inherit; }
   .save-bar.show { display: flex; }
   .save-bar .label { font-size: 12px; color: var(--warn); font-weight: 600; }
-  textarea.song-input { width: 100%; min-height: 280px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 5px; font-size: 12.5px; outline: none; font-family: "JetBrains Mono", "Consolas", monospace; line-height: 1.5; resize: vertical; }
+  textarea.song-input { width: 100%; min-height: 280px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 5px; font-size: 12.5px; outline: none; font-family: "JetBrains Mono", "Consolas", "Menlo", monospace; font-variant-ligatures: none; tab-size: 4; line-height: 1.5; resize: vertical; }
   textarea.song-input:focus { border-color: var(--accent); }
   .preview-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin-top: 12px; font-size: 12.5px; }
   .preview-card .row { display: flex; gap: 16px; flex-wrap: wrap; padding: 4px 0; }
@@ -146,7 +146,7 @@ HTML = r"""<!DOCTYPE html>
   .center-body { flex: 1; overflow-y: auto; padding: 32px 48px 80px; background: var(--bg); }
   .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-dim); text-align: center; flex-direction: column; gap: 12px; padding: 24px; }
   .empty .hint { font-size: 13px; max-width: 400px; line-height: 1.5; }
-  pre.song-body { font-family: "JetBrains Mono", "Consolas", "Menlo", monospace; font-size: var(--song-fs, 14px); line-height: 1.55; white-space: pre; overflow-x: auto; margin: 0; color: var(--text); }
+  pre.song-body { font-family: "JetBrains Mono", "Consolas", "Menlo", monospace; font-variant-ligatures: none; tab-size: 4; font-size: var(--song-fs, 14px); line-height: 1.55; white-space: pre; overflow-x: auto; margin: 0; color: var(--text); }
   pre.song-body .chord { color: var(--chord); font-weight: 600; }
   pre.song-body .tab { color: var(--text-dim); }
   pre.song-body .tab .fret { color: var(--chord); font-weight: 700; }
@@ -1265,6 +1265,19 @@ function renderTabLine(line) {
   return `<span class="tab">${escapeHtml(line).replace(/(\d+)/g, '<span class="fret">$1</span>')}</span>`;
 }
 
+// Transpose une ligne d'accords en gardant chaque accord à sa colonne (Am → A#m est plus long : on
+// reprend l'espace sur l'écart suivant, sinon tout ce qui suit serait décalé).
+function transposeChordLine(line, steps) {
+  let out = "";
+  const re = /\S+/g; let m;
+  while ((m = re.exec(line)) !== null) {
+    if (out.length < m.index) out += " ".repeat(m.index - out.length);
+    else if (out.length > 0) out += " ";
+    out += transposeChord(m[0], steps);
+  }
+  return out;
+}
+
 function lineKeyOf(line) { return line.replace(/\s+/g, " ").trim(); }
 
 // Coupe une paire (ligne d'accords, ligne de paroles) en plusieurs morceaux de <= cols caractères,
@@ -1320,7 +1333,7 @@ function renderSongBody(text, steps, songId, cols) {
     if (kind === "section") { out.push(`<span class="section">${escapeHtml(line)}</span>`); continue; }
     if (kind === "tab") { out.push(renderTabLine(line)); continue; }
     if (kind === "chord") {
-      const tr = steps !== 0 ? transposeChord(line, steps) : line;
+      const tr = steps !== 0 ? transposeChordLine(line, steps) : line;
       const next = raw[i + 1];
       const paired = cols && next !== undefined && kinds[i + 1] === "lyric" && next.trim() !== "";
       if (!cols || (Math.max(tr.length, paired ? next.length : 0) <= cols)) { out.push(`<span class="chord">${escapeHtml(tr)}</span>`); continue; }
