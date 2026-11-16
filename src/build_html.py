@@ -710,7 +710,7 @@ const SETTINGS_KEY = "groove-in-settings-v2";
 let state = {
   currentSongId: null,
   fontSize: 14,
-  fitWidth: true,
+  wrapLines: true,
   transposeSteps: 0,
   songs: [...EMBEDDED_SONGS],
   filtered: [...EMBEDDED_SONGS],
@@ -737,7 +737,7 @@ function loadFromStorage() {
     }
     const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     if (settings.fontSize) state.fontSize = settings.fontSize;
-    if (typeof settings.fitWidth === "boolean") state.fitWidth = settings.fitWidth;
+    if (typeof settings.wrapLines === "boolean") state.wrapLines = settings.wrapLines;
     if (settings.driveUrl) state.driveUrl = settings.driveUrl;
     if (settings.gasUrl) state.gasUrl = settings.gasUrl;
     if (settings.songSingers) state.songSingers = settings.songSingers;
@@ -752,7 +752,7 @@ function loadFromStorage() {
 
 function saveToStorage() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ setlists: state.setlists, currentSetlistId: state.currentSetlistId }));
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ fontSize: state.fontSize, fitWidth: state.fitWidth, driveUrl: state.driveUrl, gasUrl: state.gasUrl, songSingers: state.songSingers }));
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ fontSize: state.fontSize, wrapLines: state.wrapLines, driveUrl: state.driveUrl, gasUrl: state.gasUrl, songSingers: state.songSingers }));
   // Si connecté à Apps Script, synchroniser les setlists et chanteurs vers le Sheet (avec debounce)
   if (typeof scheduleSetlistsSave === "function") scheduleSetlistsSave();
   if (typeof scheduleSingersSave === "function") scheduleSingersSave();
@@ -1854,6 +1854,7 @@ function toggleStage() {
     exitFullscreen();
   }
   renderSong();
+  setTimeout(fitSongBodies, 400); // le plein écran change la largeur après coup
 }
 
 // ===== PLEIN ÉCRAN (Fullscreen API) =====
@@ -1894,23 +1895,23 @@ function toggleFullscreen() {
 // La police garde la taille choisie (A− / A+). Si une ligne dépasse la largeur de l'écran, elle est
 // coupée aux espaces, et la ligne d'accords est coupée aux mêmes colonnes pour rester alignée.
 // Le bouton ⇔ active/désactive ce retour à la ligne (les tablatures ne sont jamais coupées).
-function toggleFit() { state.fitWidth = !state.fitWidth; saveToStorage(); fitSongBodies(); }
+function toggleFit() { state.wrapLines = !state.wrapLines; saveToStorage(); fitSongBodies(); }
 function fitSongBodies() {
   const fb = document.getElementById("fit-btn");
-  if (fb) fb.style.cssText = state.fitWidth ? "background:var(--accent);color:var(--bg);border-color:var(--accent)" : "";
+  if (fb) fb.style.cssText = state.wrapLines ? "background:var(--accent);color:var(--bg);border-color:var(--accent)" : "";
   document.querySelectorAll("pre.song-body").forEach(pre => {
     const song = state.songs.find(s => s.id === parseInt(pre.dataset.songId));
     const host = pre.parentElement;
     if (!song || !host) return;
     let cols = 0;
-    if (state.fitWidth) {
+    if (state.wrapLines) {
       const cs = getComputedStyle(host);
       const avail = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
       if (avail <= 0) return;
       const probe = document.createElement("span");
-      probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font:" + getComputedStyle(pre).font;
+      probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;";
       probe.textContent = "0".repeat(100);
-      document.body.appendChild(probe);
+      pre.appendChild(probe); // mesuré DANS le <pre> : hérite exactement de sa police et de sa taille
       const charW = probe.getBoundingClientRect().width / 100;
       probe.remove();
       if (charW > 0) cols = Math.max(20, Math.floor(avail / charW) - 1);
@@ -1924,6 +1925,8 @@ let _fitTimer = null;
 function scheduleFit() { clearTimeout(_fitTimer); _fitTimer = setTimeout(fitSongBodies, 120); }
 window.addEventListener("resize", scheduleFit);
 window.addEventListener("orientationchange", scheduleFit);
+document.addEventListener("fullscreenchange", scheduleFit);
+document.addEventListener("webkitfullscreenchange", scheduleFit);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitSongBodies);
 
 // ===== SIDEBAR TOGGLE =====
