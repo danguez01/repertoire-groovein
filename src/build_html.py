@@ -425,8 +425,7 @@ HTML = r"""<!DOCTYPE html>
     .filters select, .filters input { min-height: 40px; font-size: 16px; }
   }
 
-  /* Paroles : la taille est ajustée automatiquement à la largeur (voir fitSongBodies) */
-  pre.song-body { font-size: var(--song-fs-fit, var(--song-fs, 14px)); }
+  /* Paroles : retour à la ligne automatique géré en JS (voir fitSongBodies) */
 
   /* === AUTO-SCROLL CONTROLS (téléprompteur) === */
   .scroll-controls {
@@ -507,7 +506,7 @@ HTML = r"""<!DOCTYPE html>
       <div class="controls">
         <button class="btn icon ghost stage-hide" title="Diminuer" onclick="changeFontSize(-1)">A−</button>
         <button class="btn icon ghost stage-hide" title="Augmenter" onclick="changeFontSize(1)">A+</button>
-        <button class="btn icon ghost stage-hide" id="fit-btn" title="Ajuster le texte à la largeur de l'écran (activé/désactivé)" onclick="toggleFit()">⇔</button>
+        <button class="btn icon ghost stage-hide" id="fit-btn" title="Retour à la ligne automatique des paroles (activé/désactivé)" onclick="toggleFit()">⇔</button>
         <button class="btn icon ghost" title="Transposer −1" onclick="transpose(-1)">♭</button>
         <button class="btn icon ghost" title="Transposer +1" onclick="transpose(1)">♯</button>
         <button class="btn icon ghost" title="Réinitialiser transposition" onclick="resetTranspose()">⟲</button>
@@ -1268,28 +1267,79 @@ function renderTabLine(line) {
 
 function lineKeyOf(line) { return line.replace(/\s+/g, " ").trim(); }
 
-function renderSongBody(text, steps, songId) {
+// Coupe une paire (ligne d'accords, ligne de paroles) en plusieurs morceaux de <= cols caractères,
+// aux mêmes colonnes, sans couper un mot ni un accord : les accords restent au-dessus des bons mots.
+function wrapPair(c, l, cols) {
+  const segs = [];
+  let guard = 0;
+  while (Math.max(c.length, l.length) > cols && guard++ < 200) {
+    let col = 0;
+    for (let k = cols; k >= 1; k--) {
+      const lyricOk = k >= l.length || l[k] === " " || l[k - 1] === " ";
+      const chordOk = !(c[k - 1] && c[k] && c[k - 1] !== " " && c[k] !== " ");
+      if (lyricOk && chordOk && (l.slice(0, k).trim() || c.slice(0, k).trim())) { col = k; break; }
+    }
+    if (!col) col = cols; // mot plus long que la largeur : coupure forcée
+    segs.push([c.slice(0, col).replace(/\s+$/, ""), l.slice(0, col).replace(/\s+$/, "")]);
+    c = c.slice(col); l = l.slice(col);
+    const lc = c.trim() ? c.match(/^ */)[0].length : Infinity;
+    const ll = l.trim() ? l.match(/^ */)[0].length : Infinity;
+    const sh = Math.min(lc, ll);
+    if (sh === Infinity) { c = ""; l = ""; break; }
+    c = c.slice(sh); l = l.slice(sh);
+  }
+  if (c.trim() || l.trim() || !segs.length) segs.push([c.replace(/\s+$/, ""), l.replace(/\s+$/, "")]);
+  return segs;
+}
+
+// cols = nombre de caractères max par ligne (retour à la ligne automatique) ; 0/absent = pas de coupure
+function renderSongBody(text, steps, songId, cols) {
   if (!text) return "(aucun corps disponible)";
   const singersCfg = songId ? ((state.songSingers || {})[songId] || {}) : {};
   const assignments = singersCfg.assignments || {};
-  return text.split("\n").map(line => {
+  const raw = text.split("\n");
+  const kinds = raw.map(line => {
     const trimmed = line.trim();
-    if (/^\[?\s*(intro|verse|chorus|bridge|refrain|pont|pre[- ]?chorus|interlude|outro|hook|solo|couplet|arp[eè]ges?|tab)\s*\d*\s*:?\s*\]?$/i.test(trimmed)) {
-      return `<span class="section">${escapeHtml(line)}</span>`;
-    }
-    if (isTabLine(line)) return renderTabLine(line);
-    if (isChordLine(trimmed)) {
-      const transposed = steps !== 0 ? transposeChord(line, steps) : line;
-      return `<span class="chord">${escapeHtml(transposed)}</span>`;
-    }
-    // Ligne de paroles : encadrer dans un span .line pour la couleur chanteur
+    if (/^\[?\s*(intro|verse|chorus|bridge|refrain|pont|pre[- ]?chorus|interlude|outro|hook|solo|couplet|arp[eè]ges?|tab)\s*\d*\s*:?\s*\]?$/i.test(trimmed)) return "section";
+    if (isTabLine(line)) return "tab";
+    if (isChordLine(trimmed)) return "chord";
+    return "lyric";
+  });
+  const lyricHtml = (txt, origLine) => {
     if (songId) {
-      const lineKey = lineKeyOf(line);
+      const lineKey = lineKeyOf(origLine);
       const singer = assignments[lineKey] || 0;
-      return `<span class="line line-singer-${singer}" data-line="${escapeHtml(lineKey)}">${escapeHtml(line)}</span>`;
+      return `<span class="line line-singer-${singer}" data-line="${escapeHtml(lineKey)}">${escapeHtml(txt)}</span>`;
     }
-    return escapeHtml(line);
-  }).join("\n");
+    return escapeHtml(txt);
+  };
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const line = raw[i];
+    const kind = kinds[i];
+    if (kind === "section") { out.push(`<span class="section">${escapeHtml(line)}</span>`); continue; }
+    if (kind === "tab") { out.push(renderTabLine(line)); continue; }
+    if (kind === "chord") {
+      const tr = steps !== 0 ? transposeChord(line, steps) : line;
+      const next = raw[i + 1];
+      const paired = cols && next !== undefined && kinds[i + 1] === "lyric" && next.trim() !== "";
+      if (!cols || (Math.max(tr.length, paired ? next.length : 0) <= cols)) { out.push(`<span class="chord">${escapeHtml(tr)}</span>`); continue; }
+      if (paired) {
+        wrapPair(tr, next, cols).forEach(([c, l]) => {
+          if (c.trim()) out.push(`<span class="chord">${escapeHtml(c)}</span>`);
+          out.push(lyricHtml(l, next));
+        });
+        i++; // la ligne de paroles est déjà traitée
+      } else {
+        wrapPair(tr, "", cols).forEach(([c]) => out.push(`<span class="chord">${escapeHtml(c)}</span>`));
+      }
+      continue;
+    }
+    // paroles seules
+    if (cols && line.length > cols) wrapPair("", line, cols).forEach(([, l]) => out.push(lyricHtml(l, line)));
+    else out.push(lyricHtml(line, line));
+  }
+  return out.join("\n");
 }
 
 function renderSongList() {
@@ -1361,7 +1411,7 @@ function renderSong() {
   // notes handled by dedicated notes panel below the song body
   const extraHtml = extras.length ? `<div class="extra-meta">${extras.join("")}</div>` : "";
 
-  bodyEl.innerHTML = extraHtml + `<pre class="song-body">${renderSongBody(song.body_full, state.transposeSteps, song.id)}</pre>` + buildNotesPanel(song);
+  bodyEl.innerHTML = extraHtml + `<pre class="song-body" data-song-id="${song.id}">${renderSongBody(song.body_full, state.transposeSteps, song.id)}</pre>` + buildNotesPanel(song);
   refreshSingersBtnLabel();
   fitSongBodies();
 }
@@ -1827,37 +1877,34 @@ function toggleFullscreen() {
 });
 
 
-// ===== AJUSTEMENT AUTOMATIQUE DES PAROLES À LA LARGEUR =====
-// La taille choisie (A− / A+) est un MAXIMUM : si la ligne la plus longue dépasse la largeur
-// disponible, on réduit la police (plancher 9px). Les accords restent alignés (police à chasse fixe).
-const FIT_MIN_PX = 9;
+// ===== RETOUR À LA LIGNE AUTOMATIQUE DES PAROLES =====
+// La police garde la taille choisie (A− / A+). Si une ligne dépasse la largeur de l'écran, elle est
+// coupée aux espaces, et la ligne d'accords est coupée aux mêmes colonnes pour rester alignée.
+// Le bouton ⇔ active/désactive ce retour à la ligne (les tablatures ne sont jamais coupées).
 function toggleFit() { state.fitWidth = !state.fitWidth; saveToStorage(); fitSongBodies(); }
 function fitSongBodies() {
   const fb = document.getElementById("fit-btn");
   if (fb) fb.style.cssText = state.fitWidth ? "background:var(--accent);color:var(--bg);border-color:var(--accent)" : "";
   document.querySelectorAll("pre.song-body").forEach(pre => {
-    pre.style.removeProperty("--song-fs-fit");
-    if (!state.fitWidth) return;
+    const song = state.songs.find(s => s.id === parseInt(pre.dataset.songId));
     const host = pre.parentElement;
-    if (!host) return;
-    const cs = getComputedStyle(host);
-    const avail = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    if (avail <= 0) return;
-    const fs = parseFloat(getComputedStyle(pre).fontSize);
-    const maxChars = (pre.textContent || "").split("\n").reduce((m, l) => Math.max(m, l.length), 0);
-    if (!maxChars || !fs) return;
-    // largeur d'un caractère = mesure réelle de la police à chasse fixe
-    const probe = document.createElement("span");
-    probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font:" + getComputedStyle(pre).font;
-    probe.textContent = "0".repeat(100);
-    document.body.appendChild(probe);
-    const ratio = probe.getBoundingClientRect().width / 100 / fs;
-    probe.remove();
-    const needed = maxChars * ratio * fs;
-    if (needed > avail) {
-      const fit = Math.max(FIT_MIN_PX, Math.floor((fs * avail / needed) * 10) / 10);
-      pre.style.setProperty("--song-fs-fit", fit + "px");
+    if (!song || !host) return;
+    let cols = 0;
+    if (state.fitWidth) {
+      const cs = getComputedStyle(host);
+      const avail = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      if (avail <= 0) return;
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font:" + getComputedStyle(pre).font;
+      probe.textContent = "0".repeat(100);
+      document.body.appendChild(probe);
+      const charW = probe.getBoundingClientRect().width / 100;
+      probe.remove();
+      if (charW > 0) cols = Math.max(20, Math.floor(avail / charW) - 1);
     }
+    if (pre.dataset.cols === String(cols)) return;
+    pre.dataset.cols = String(cols);
+    pre.innerHTML = renderSongBody(song.body_full || "", state.transposeSteps, song.id, cols);
   });
 }
 let _fitTimer = null;
@@ -2020,7 +2067,7 @@ function renderSetlistFlow() {
             ${meta.length ? `<div class="song-meta">${meta.join(" · ")}</div>` : ""}
           </div>
         </div>
-        <pre class="song-body">${renderSongBody(song.body_full || "", state.transposeSteps, song.id)}</pre>
+        <pre class="song-body" data-song-id="${song.id}">${renderSongBody(song.body_full || "", state.transposeSteps, song.id)}</pre>
         ${idx < sl.songIds.length - 1 ? '<div class="song-sep"></div>' : ""}
       </div>`);
   });
