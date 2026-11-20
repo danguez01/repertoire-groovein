@@ -235,6 +235,9 @@ HTML = r"""<!DOCTYPE html>
   .app.setlist-mode { grid-template-columns: 1fr; }
   .app.setlist-mode .center-header { background: var(--bg); padding: 12px 24px; border-bottom: 2px solid var(--accent); }
   .app.setlist-mode .stage-hide { display: none; }
+  .exit-set { display: none; }
+  .app.setlist-mode .exit-set { display: inline-flex; align-items: center; background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 700; }
+  .app.setlist-mode #stage-btn { display: none; }
   .app.setlist-mode .song-title { font-size: 17px; }
   .setlist-flow { padding: 12px 0 80px; }
   .setlist-flow .song-block { margin-bottom: 36px; }
@@ -517,7 +520,8 @@ HTML = r"""<!DOCTYPE html>
         <button class="btn ghost stage-hide setlist-toggle" onclick="toggleSetlistPanel()" title="Afficher la setlist" aria-label="Setlist">📋 Set</button>
         <button class="btn ghost stage-hide" id="singers-btn" onclick="openSingersModal()" title="Configurer les chanteurs">🎤<span id="singers-btn-count" style="margin-left:3px;font-size:11px;font-weight:700"></span></button>
         <button class="btn icon ghost" id="fullscreen-btn" onclick="toggleFullscreen()" title="Plein écran (F)">⛶</button>
-        <button class="btn primary" onclick="toggleStage()">🎤 Scène</button>
+        <button class="btn exit-set" id="exit-set-btn" onclick="exitSetlistPlay()" title="Quitter le set et revenir aux menus">✕ Quitter le set</button>
+        <button class="btn primary" id="stage-btn" onclick="toggleStage()">🎤 Scène</button>
       </div>
     </div>
     <div class="singer-banner" id="singer-banner">
@@ -1845,6 +1849,7 @@ function transpose(s) { state.transposeSteps += s; renderSong(); }
 function resetTranspose() { state.transposeSteps = 0; renderSong(); }
 function toggleStage() {
   const app = document.getElementById("app");
+  if (app.classList.contains("setlist-mode")) { exitSetlistPlay(); return; }
   app.classList.toggle("stage");
   const stageOn = app.classList.contains("stage");
   if (stageOn) {
@@ -2579,7 +2584,8 @@ document.addEventListener("keydown", e => {
   }
 
   // Téléprompteur : Espace = play/pause, +/- = vitesse, R = reset (uniquement si une chanson est affichée et qu'on ne saisit pas)
-  if (state.currentSongId && !isTyping) {
+  const inSet = document.getElementById("app").classList.contains("setlist-mode");
+  if ((state.currentSongId || inSet) && !isTyping) {
     if (e.code === "Space") { e.preventDefault(); toggleAutoScroll(); return; }
     if (e.key === "+" || e.key === "=") { e.preventDefault(); changeScrollSpeed(5); return; }
     if (e.key === "-" || e.key === "_") { e.preventDefault(); changeScrollSpeed(-5); return; }
@@ -2590,7 +2596,7 @@ document.addEventListener("keydown", e => {
   // Pédale / clavier : flèches et Page haut/bas = défilement d'un écran (comme une tourne-page).
   // Maj + flèche gauche/droite = chanson précédente/suivante de la setlist (mode scène).
   const modalOpen = document.querySelector(".modal-bg.show");
-  if (state.currentSongId && !isTyping && !modalOpen) {
+  if ((state.currentSongId || inSet) && !isTyping && !modalOpen) {
     const app = document.getElementById("app");
     const sl = state.setlists[state.currentSetlistId];
     if (e.shiftKey && (e.key === "ArrowRight" || e.key === "ArrowLeft") && app.classList.contains("stage") && sl && sl.songIds.length) {
