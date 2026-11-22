@@ -25,6 +25,15 @@
   body.mode-accords .song div.b { opacity: .85; }
   body.mode-accords .song div.g { height: .7em; }
   body.mode-accords #scroller { padding: 8vh 2vw 40vh; }
+  /* Paroles + accords : paroles en très gros, accords plus petits au-dessus */
+  .song.with-chords { width: max-content; margin-left: auto; margin-right: auto; text-align: left; }
+  .song.with-chords h1 { text-align: center; }
+  .song.with-chords .pair { position: relative; padding-top: calc(var(--lfs) * 0.78); }
+  .song.with-chords .ch { position: absolute; top: 0; font-family: Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: calc(var(--lfs) * 0.62); font-weight: 800; color: #f0a868; line-height: 1; white-space: pre; }
+  .song.with-chords .lyr { font-family: Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: var(--lfs); font-weight: 800; line-height: 1.2; white-space: pre; }
+  .song.with-chords .onlychords { font-family: Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: calc(var(--lfs) * 0.62); font-weight: 800; color: #f0a868; white-space: pre; margin: .3em 0; }
+  .song.with-chords .sec { font-size: calc(var(--lfs) * 0.5); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; opacity: .6; margin: .8em 0 .2em; }
+  .song.with-chords .gap { height: calc(var(--lfs) * 0.6); }
   /* Logo en coin */
   #logo-corner { position: fixed; z-index: 5; display: none; pointer-events: none; }
   #logo-corner img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -107,9 +116,41 @@
     if (!(songs && songs.length)) waitEl.textContent = "Aucune chanson affichée — choisis une chanson dans Groove In.";
     fitAccords(songs);
   }
+  // Paroles en gros + accords plus petits (colonnes conservées via une largeur de caractère mesurée)
+  function renderWithChords(songs) {
+    let cols = 20;
+    (songs || []).forEach(s => { if (s.cols && s.cols > cols) cols = s.cols; });
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-family:Menlo,Consolas,'DejaVu Sans Mono',monospace;font-weight:800;font-size:100px";
+    probe.textContent = "0".repeat(50); document.body.appendChild(probe);
+    const cw1 = (probe.getBoundingClientRect().width / 50 / 100) || 0.6; probe.remove();
+    const lfs = Math.max(16, Math.min(window.innerWidth * 0.94 / (cols * cw1), window.innerHeight * 0.1));
+    document.documentElement.style.setProperty("--lfs", lfs + "px");
+    const cw = lfs * cw1, cchars = lfs * 0.62 * cw1;
+    sc.innerHTML = "";
+    songs.forEach(sg => {
+      const d = document.createElement("div"); d.className = "song with-chords";
+      if (cfg.showTitle !== false && sg.title) { const h = document.createElement("h1"); h.textContent = sg.title; d.appendChild(h); }
+      (sg.rows || []).forEach(r => {
+        if (r.g) { const x = document.createElement("div"); x.className = "gap"; d.appendChild(x); return; }
+        if (r.sec) { const x = document.createElement("div"); x.className = "sec"; x.textContent = r.sec; d.appendChild(x); return; }
+        if (r.l === undefined || r.l === "") { if (r.c) { const x = document.createElement("div"); x.className = "onlychords"; x.textContent = r.c; d.appendChild(x); } return; }
+        const pr = document.createElement("div"); pr.className = "pair";
+        const re = /\S+/g; let m;
+        while (r.c && (m = re.exec(r.c)) !== null) { const c = document.createElement("span"); c.className = "ch"; c.textContent = m[0]; c.style.left = (m.index * cw) + "px"; pr.appendChild(c); }
+        const l = document.createElement("div"); l.className = "lyr"; l.textContent = r.l; pr.appendChild(l);
+        if (!(r.c && r.c.trim())) pr.style.paddingTop = "0";
+        d.appendChild(pr);
+      });
+      sc.appendChild(d);
+    });
+    waitEl.style.display = songs.length ? "none" : "flex";
+    if (!songs.length) waitEl.textContent = "Aucune chanson affichée — choisis une chanson dans Groove In.";
+  }
   function renderSongs(songs) {
     lastSongs = songs || [];
     if (MODE === "accords") { renderAccords(songs); return; }
+    if (songs && songs.length && songs[0].rows) { renderWithChords(songs); return; }
     const keep = sc.scrollTop;
     sc.innerHTML = "";
     (songs || []).forEach(s => {
@@ -143,7 +184,7 @@
   });
   function hello() { try { if (opener) opener.postMessage({ type: "public-hello" }, "*"); } catch (e) {} }
   hello(); setTimeout(hello, 800);
-  window.addEventListener("resize", () => { if (MODE === "accords") fitAccords(lastSongs); setScroll(lastRatio, true); });
+  window.addEventListener("resize", () => { if (MODE === "accords") fitAccords(lastSongs); else if (lastSongs[0] && lastSongs[0].rows) renderWithChords(lastSongs); setScroll(lastRatio, true); });
 
   // Plein écran : double-clic ; + / − taille ; L logo ; F plein écran
   function toggleFs() {

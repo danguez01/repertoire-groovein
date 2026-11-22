@@ -633,6 +633,7 @@ F   C   G   Am
       <div><label for="public-size">Taille du logo</label><input id="public-size" type="range" min="6" max="35" step="1" oninput="publicSetting('size', +this.value)"></div>
       <div><label for="public-bg">Couleur de fond</label><input id="public-bg" type="color" oninput="publicSetting('bg', this.value)"></div>
       <div><label for="public-fs">Taille du texte</label><input id="public-fs" type="range" min="2.5" max="10" step="0.1" oninput="publicSetting('fs', +this.value)"></div>
+      <div style="grid-column:1/-1"><label style="display:flex;gap:8px;align-items:center"><input id="public-chords" type="checkbox" onchange="publicSetting('showChords', this.checked)" style="width:auto"> Afficher aussi les accords (en plus petit, au-dessus des paroles)</label></div>
       <div style="grid-column:1/-1"><label style="display:flex;gap:8px;align-items:center"><input id="public-title" type="checkbox" onchange="publicSetting('showTitle', this.checked)" style="width:auto"> Afficher le titre de chaque chanson</label></div>
     </div>
     <p style="margin:12px 0 0;font-size:12px;opacity:.6">L'<strong>écran accords</strong> montre la chanson avec ses accords (transposés comme chez toi). Ouvre-le sur la 2<sup>e</sup> sortie vidéo, l'écran public sur la 1<sup>re</sup>. Raccourci : touche <strong>L</strong> = logo plein écran / retour aux paroles. Les réglages sont mémorisés sur cet ordinateur.</p>
@@ -2604,7 +2605,7 @@ if (state.gasUrl) {
 
 // ===== ÉCRAN PUBLIC : paroles seules (sans accords) + logo, dans une 2e fenêtre =====
 const PUBLIC_KEY = "groovein_public_v1";
-const PUBLIC_DEFAULTS = { logoSrc: "", pos: "bottom-right", size: 14, bg: "#000000", fs: 5, showTitle: true, logoFull: false };
+const PUBLIC_DEFAULTS = { logoSrc: "", pos: "bottom-right", size: 14, bg: "#000000", fs: 5, showTitle: true, logoFull: false, showChords: false };
 let publicCfg = Object.assign({}, PUBLIC_DEFAULTS);
 try { Object.assign(publicCfg, JSON.parse(localStorage.getItem(PUBLIC_KEY) || "{}")); } catch (e) {}
 let publicWin = null, chordsWin = null;
@@ -2645,12 +2646,35 @@ function chordSongs() {
     return { title: s.title, rows };
   });
 }
+// Écran public avec accords : paires (accords, paroles) découpées à `cols` caractères, accords alignés
+function chordRowsWrapped(body, steps, cols) {
+  const raw = (body || "").split("\n");
+  const kind = l => { const t = l.trim(); return t === "" ? "blank" : isSectionLine(t) ? "section" : isTabLine(l) ? "tab" : isChordLine(t) ? "chord" : "lyric"; };
+  const rows = [];
+  for (let i = 0; i < raw.length; i++) {
+    const line = raw[i], k = kind(line);
+    if (k === "blank") { if (rows.length && !rows[rows.length - 1].g) rows.push({ g: 1 }); continue; }
+    if (k === "section") { rows.push({ sec: line.trim().replace(/^\[|\]$/g, "") }); continue; }
+    if (k === "tab") continue;
+    if (k === "chord") {
+      const tr = steps !== 0 ? transposeChordLine(line, steps) : line;
+      if (i + 1 < raw.length && kind(raw[i + 1]) === "lyric") { wrapPair(tr, raw[i + 1].replace(/\s+$/, ""), cols).forEach(([c, l]) => rows.push({ c, l })); i++; }
+      else wrapPair(tr, "", cols).forEach(([c]) => rows.push({ c, l: "" }));
+      continue;
+    }
+    wrapPair("", line.replace(/\s+$/, ""), cols).forEach(([, l]) => rows.push({ c: "", l }));
+  }
+  while (rows.length && rows[rows.length - 1].g) rows.pop();
+  return rows;
+}
 function publicSongs() {
   const app = document.getElementById("app");
   let ids = [];
   if (app.classList.contains("setlist-mode")) { const sl = state.setlists[state.currentSetlistId]; ids = sl ? sl.songIds : []; }
   else if (state.currentSongId) ids = [state.currentSongId];
-  return ids.map(id => state.songs.find(s => s.id === id)).filter(Boolean).map(s => ({ title: s.title, lines: lyricsOnly(s.body_full) }));
+  const cols = Math.max(18, Math.min(90, Math.round(200 / (publicCfg.fs || 5))));
+  return ids.map(id => state.songs.find(s => s.id === id)).filter(Boolean).map(s =>
+    publicCfg.showChords ? { title: s.title, rows: chordRowsWrapped(s.body_full, state.transposeSteps, cols), cols } : { title: s.title, lines: lyricsOnly(s.body_full) });
 }
 function publicScrollRatio() {
   const el = document.getElementById("song-body");
@@ -2697,7 +2721,11 @@ function publicOpen() {
   }
   setTimeout(publicSync, 600);
 }
-function publicSetting(k, v) { publicCfg[k] = v; publicSave(); publicPost({ type: "public-cfg", cfg: publicCfgForSend() }); }
+function publicSetting(k, v) {
+  publicCfg[k] = v; publicSave();
+  if (k === "showChords" || (k === "fs" && publicCfg.showChords)) publicSync(); // le contenu change : renvoi complet
+  else publicPost({ type: "public-cfg", cfg: publicCfgForSend() });
+}
 function publicToggleLogoFull() { publicSetting("logoFull", !publicCfg.logoFull); refreshPublicModal(); }
 function publicResetLogo() { publicSetting("logoSrc", ""); refreshPublicModal(); }
 function publicLoadLogo(file) {
@@ -2723,6 +2751,7 @@ function refreshPublicModal() {
   document.getElementById("public-bg").value = publicCfg.bg;
   document.getElementById("public-fs").value = publicCfg.fs;
   document.getElementById("public-title").checked = publicCfg.showTitle !== false;
+  document.getElementById("public-chords").checked = !!publicCfg.showChords;
   const b = document.getElementById("public-logofull-btn");
   b.textContent = publicCfg.logoFull ? "📝 Revenir aux paroles" : "🖼 Logo en plein écran";
 }
