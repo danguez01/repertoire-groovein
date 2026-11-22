@@ -611,6 +611,7 @@ F   C   G   Am
     <p style="margin:0 0 12px;font-size:13px;opacity:.75">Une 2<sup>e</sup> fenêtre n'affiche que les <strong>paroles</strong> (sans accords) et un <strong>logo</strong>. Glisse-la sur l'écran branché au répartiteur HDMI, puis double-clique dedans pour le plein écran.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       <button class="btn primary" onclick="publicOpen()">📺 Ouvrir / ramener l'écran public</button>
+      <button class="btn ghost" onclick="chordsOpen()" title="2e écran / sortie vidéo : la chanson avec ses accords en couleur">🎸 Ouvrir l'écran accords</button>
       <button class="btn ghost" id="public-logofull-btn" onclick="publicToggleLogoFull()">🖼 Logo en plein écran</button>
     </div>
     <div class="info-grid">
@@ -634,7 +635,7 @@ F   C   G   Am
       <div><label for="public-fs">Taille du texte</label><input id="public-fs" type="range" min="2.5" max="10" step="0.1" oninput="publicSetting('fs', +this.value)"></div>
       <div style="grid-column:1/-1"><label style="display:flex;gap:8px;align-items:center"><input id="public-title" type="checkbox" onchange="publicSetting('showTitle', this.checked)" style="width:auto"> Afficher le titre de chaque chanson</label></div>
     </div>
-    <p style="margin:12px 0 0;font-size:12px;opacity:.6">Raccourci : touche <strong>L</strong> = logo plein écran / retour aux paroles. Les réglages sont mémorisés sur cet ordinateur.</p>
+    <p style="margin:12px 0 0;font-size:12px;opacity:.6">L'<strong>écran accords</strong> montre la chanson avec ses accords (transposés comme chez toi). Ouvre-le sur la 2<sup>e</sup> sortie vidéo, l'écran public sur la 1<sup>re</sup>. Raccourci : touche <strong>L</strong> = logo plein écran / retour aux paroles. Les réglages sont mémorisés sur cet ordinateur.</p>
   </div>
 </div>
 
@@ -2606,7 +2607,8 @@ const PUBLIC_KEY = "groovein_public_v1";
 const PUBLIC_DEFAULTS = { logoSrc: "", pos: "bottom-right", size: 14, bg: "#000000", fs: 5, showTitle: true, logoFull: false };
 let publicCfg = Object.assign({}, PUBLIC_DEFAULTS);
 try { Object.assign(publicCfg, JSON.parse(localStorage.getItem(PUBLIC_KEY) || "{}")); } catch (e) {}
-let publicWin = null;
+let publicWin = null, chordsWin = null;
+function chordsIsOpen() { return chordsWin && !chordsWin.closed; }
 function publicSave() { try { localStorage.setItem(PUBLIC_KEY, JSON.stringify(publicCfg)); } catch (e) { alert("Image trop lourde pour être mémorisée : choisis un logo plus léger."); } }
 function publicIsOpen() { return publicWin && !publicWin.closed; }
 function publicPost(msg) { if (publicIsOpen()) { try { publicWin.postMessage(msg, "*"); } catch (e) {} } }
@@ -2623,6 +2625,26 @@ function lyricsOnly(body) {
   while (out.length && out[out.length - 1] === "") out.pop();
   return out;
 }
+// Écran accords : même chanson avec les accords (transposés) et leur alignement
+function chordSongs() {
+  const app = document.getElementById("app");
+  let ids = [];
+  if (app.classList.contains("setlist-mode")) { const sl = state.setlists[state.currentSetlistId]; ids = sl ? sl.songIds : []; }
+  else if (state.currentSongId) ids = [state.currentSongId];
+  return ids.map(id => state.songs.find(s => s.id === id)).filter(Boolean).map(s => {
+    const rows = [];
+    (s.body_full || "").split("\n").forEach(line => {
+      const t = line.trim();
+      if (t === "") { if (rows.length && rows[rows.length - 1].t !== "g") rows.push({ t: "g" }); return; }
+      if (isSectionLine(t)) rows.push({ t: "s", s: t.replace(/^\[|\]$/g, "") });
+      else if (isTabLine(line)) rows.push({ t: "b", s: line.replace(/\s+$/, "") });
+      else if (isChordLine(t)) rows.push({ t: "c", s: (state.transposeSteps !== 0 ? transposeChordLine(line, state.transposeSteps) : line).replace(/\s+$/, "") });
+      else rows.push({ t: "l", s: line.replace(/\s+$/, "") });
+    });
+    while (rows.length && rows[rows.length - 1].t === "g") rows.pop();
+    return { title: s.title, rows };
+  });
+}
 function publicSongs() {
   const app = document.getElementById("app");
   let ids = [];
@@ -2638,16 +2660,29 @@ function publicScrollRatio() {
 }
 function publicCfgForSend() { return Object.assign({}, publicCfg, { logoSrc: publicCfg.logoSrc || "" }); }
 function publicSync() {
-  if (!publicIsOpen()) return;
-  publicPost({ type: "public-state", songs: publicSongs(), scroll: publicScrollRatio(), cfg: publicCfgForSend() });
+  if (publicIsOpen()) publicPost({ type: "public-state", mode: "paroles", songs: publicSongs(), scroll: publicScrollRatio(), cfg: publicCfgForSend() });
+  if (chordsIsOpen()) { try { chordsWin.postMessage({ type: "public-state", mode: "accords", songs: chordSongs(), scroll: publicScrollRatio(), cfg: publicCfgForSend() }, "*"); } catch (e) {} }
 }
 let _pubScrollTick = false;
 document.getElementById("song-body").addEventListener("scroll", () => {
-  if (!publicIsOpen() || _pubScrollTick) return;
+  if ((!publicIsOpen() && !chordsIsOpen()) || _pubScrollTick) return;
   _pubScrollTick = true;
-  requestAnimationFrame(() => { _pubScrollTick = false; publicPost({ type: "public-scroll", scroll: publicScrollRatio() }); });
+  requestAnimationFrame(() => { _pubScrollTick = false; const m = { type: "public-scroll", scroll: publicScrollRatio() }; publicPost(m); if (chordsIsOpen()) { try { chordsWin.postMessage(m, "*"); } catch (e) {} } });
 });
-window.addEventListener("message", e => { if (publicIsOpen() && e.source === publicWin && e.data && e.data.type === "public-hello") publicSync(); });
+window.addEventListener("message", e => { if (e.data && e.data.type === "public-hello" && ((publicIsOpen() && e.source === publicWin) || (chordsIsOpen() && e.source === chordsWin))) publicSync(); });
+function chordsOpen() {
+  if (chordsIsOpen()) { chordsWin.focus(); publicSync(); return; }
+  chordsWin = window.open(new URL("ecran.html?mode=accords", location.href).href, "grooveinAccords", "popup=yes,width=1280,height=720");
+  if (!chordsWin) { alert("Le navigateur a bloqué la fenêtre. Autorise les fenêtres pop-up pour ce site, puis réessaie."); return; }
+  if (window.getScreenDetails) {
+    window.getScreenDetails().then(d => {
+      const others = d.screens.filter(sc => sc !== d.currentScreen);
+      const target = others[publicIsOpen() ? 1 : 0] || others[0];
+      if (target && chordsIsOpen()) { chordsWin.moveTo(target.availLeft, target.availTop); chordsWin.resizeTo(target.availWidth, target.availHeight); }
+    }).catch(() => {});
+  }
+  setTimeout(publicSync, 600);
+}
 function publicOpen() {
   if (publicIsOpen()) { publicWin.focus(); publicSync(); return; }
   const url = new URL("ecran.html", location.href).href;

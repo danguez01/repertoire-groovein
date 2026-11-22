@@ -16,6 +16,15 @@
   .song h1 { font-size: calc(var(--fs) * 0.6); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; opacity: .55; margin: 0 0 4vh; }
   .song p { font-size: var(--fs); line-height: 1.32; font-weight: 700; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .song p.gap { height: calc(var(--fs) * 0.9); }
+  /* Mode accords : police fixe, accords en couleur, alignement conservé */
+  body.mode-accords .song { text-align: left; width: max-content; margin-left: auto; margin-right: auto; }
+  body.mode-accords .song h1 { text-align: center; }
+  body.mode-accords .song div { font-family: "JetBrains Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: var(--fs); line-height: 1.3; white-space: pre; font-weight: 500; }
+  body.mode-accords .song div.c { color: #6cb6ff; font-weight: 800; }
+  body.mode-accords .song div.s { color: #f0a868; font-weight: 800; text-transform: uppercase; margin-top: .5em; }
+  body.mode-accords .song div.b { opacity: .85; }
+  body.mode-accords .song div.g { height: .7em; }
+  body.mode-accords #scroller { padding: 8vh 2vw 40vh; }
   /* Logo en coin */
   #logo-corner { position: fixed; z-index: 5; display: none; pointer-events: none; }
   #logo-corner img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -34,7 +43,7 @@
 <div id="logo-corner"><img id="logo-corner-img" alt=""></div>
 <div id="logo-full"><img id="logo-full-img" alt=""></div>
 <div id="wait">En attente de l'application Groove In…<br>(cette fenêtre se remplit toute seule)</div>
-<div id="hint">Double-clic = plein écran · + / − = taille du texte · L = logo</div>
+<div id="hint">Double-clic = plein écran · + / − = taille du texte · L = logo (paroles)</div>
 <script>
 (function () {
   const sc = document.getElementById("scroller");
@@ -42,7 +51,9 @@
   const cornerImg = document.getElementById("logo-corner-img");
   const fullImg = document.getElementById("logo-full-img");
   const waitEl = document.getElementById("wait");
-  let cfg = {}, localFs = null, lastRatio = 0;
+  let cfg = {}, localFs = null, lastRatio = 0, lastSongs = [];
+  const MODE = new URLSearchParams(location.search).get("mode") === "accords" ? "accords" : "paroles";
+  if (MODE === "accords") document.body.classList.add("mode-accords");
   const opener = window.opener;
 
   function contrast(hex) {
@@ -58,10 +69,10 @@
     document.documentElement.style.setProperty("--fs", (localFs || cfg.fs || 5) + "vh");
     const src = cfg.logoSrc || "icon-512.png";
     cornerImg.src = src; fullImg.src = src;
-    document.body.classList.toggle("logo-full", !!cfg.logoFull);
+    document.body.classList.toggle("logo-full", !!cfg.logoFull && MODE !== "accords");
     // Logo en coin
     const pos = cfg.pos || "bottom-right", size = cfg.size || 14;
-    if (pos === "none") { cornerEl.style.display = "none"; }
+    if (pos === "none" || MODE === "accords") { cornerEl.style.display = "none"; }
     else {
       cornerEl.style.display = "block";
       cornerEl.style.cssText = "position:fixed;z-index:5;pointer-events:none;display:block;width:" + size + "vw;height:" + size + "vh;";
@@ -71,7 +82,34 @@
       cornerImg.style.objectPosition = pos.indexOf("left") > -1 ? "left" : (pos.indexOf("right") > -1 ? "right" : "center");
     }
   }
+  // Mode accords : taille de police calculée pour que la plus longue ligne tienne en largeur
+  function fitAccords(songs) {
+    let maxChars = 20;
+    (songs || []).forEach(s => (s.rows || []).forEach(r => { if (r.s && r.s.length > maxChars) maxChars = r.s.length; }));
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-family:Menlo,Consolas,'DejaVu Sans Mono',monospace;font-size:100px";
+    probe.textContent = "0".repeat(50); document.body.appendChild(probe);
+    const cw = probe.getBoundingClientRect().width / 50 / 100; probe.remove(); // largeur d'un caractère pour 1px de police
+    const avail = window.innerWidth * 0.94;
+    const fit = avail / (maxChars * (cw || 0.6));
+    const want = localFs ? localFs : 9999;
+    document.documentElement.style.setProperty("--fs", Math.max(14, Math.min(fit, want, window.innerHeight * 0.075)) + "px");
+  }
+  function renderAccords(songs) {
+    sc.innerHTML = "";
+    (songs || []).forEach(s => {
+      const d = document.createElement("div"); d.className = "song";
+      if (cfg.showTitle !== false && s.title) { const h = document.createElement("h1"); h.textContent = s.title; d.appendChild(h); }
+      (s.rows || []).forEach(r => { const x = document.createElement("div"); x.className = r.t; x.textContent = r.s || ""; d.appendChild(x); });
+      sc.appendChild(d);
+    });
+    waitEl.style.display = (songs && songs.length) ? "none" : "flex";
+    if (!(songs && songs.length)) waitEl.textContent = "Aucune chanson affichée — choisis une chanson dans Groove In.";
+    fitAccords(songs);
+  }
   function renderSongs(songs) {
+    lastSongs = songs || [];
+    if (MODE === "accords") { renderAccords(songs); return; }
     const keep = sc.scrollTop;
     sc.innerHTML = "";
     (songs || []).forEach(s => {
@@ -99,13 +137,13 @@
   window.addEventListener("message", e => {
     if (opener && e.source !== opener) return;
     const d = e.data || {};
-    if (d.type === "public-state") { applyCfg(d.cfg); renderSongs(d.songs); setScroll(d.scroll || 0, true); }
+    if (d.type === "public-state") { if ((d.mode || "paroles") !== MODE) return; applyCfg(d.cfg); renderSongs(d.songs); setScroll(d.scroll || 0, true); }
     else if (d.type === "public-cfg") { applyCfg(d.cfg); }
     else if (d.type === "public-scroll") { setScroll(d.scroll || 0, false); }
   });
   function hello() { try { if (opener) opener.postMessage({ type: "public-hello" }, "*"); } catch (e) {} }
   hello(); setTimeout(hello, 800);
-  window.addEventListener("resize", () => setScroll(lastRatio, true));
+  window.addEventListener("resize", () => { if (MODE === "accords") fitAccords(lastSongs); setScroll(lastRatio, true); });
 
   // Plein écran : double-clic ; + / − taille ; L logo ; F plein écran
   function toggleFs() {
@@ -116,9 +154,14 @@
   document.addEventListener("dblclick", toggleFs);
   document.addEventListener("keydown", e => {
     if (e.key === "f" || e.key === "F") toggleFs();
+    else if (MODE === "accords" && (e.key === "+" || e.key === "-" || e.key === "=" || e.key === "_")) {
+      const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--fs")) || 24;
+      localFs = Math.max(14, cur * ((e.key === "+" || e.key === "=") ? 1.08 : 0.92));
+      fitAccords(lastSongs); setScroll(lastRatio, true);
+    }
     else if (e.key === "+" || e.key === "=") { localFs = Math.min(12, (localFs || cfg.fs || 5) + 0.4); document.documentElement.style.setProperty("--fs", localFs + "vh"); setScroll(lastRatio, true); }
     else if (e.key === "-" || e.key === "_") { localFs = Math.max(2, (localFs || cfg.fs || 5) - 0.4); document.documentElement.style.setProperty("--fs", localFs + "vh"); setScroll(lastRatio, true); }
-    else if (e.key === "l" || e.key === "L") { cfg.logoFull = !cfg.logoFull; document.body.classList.toggle("logo-full", cfg.logoFull); }
+    else if (MODE !== "accords" && (e.key === "l" || e.key === "L")) { cfg.logoFull = !cfg.logoFull; document.body.classList.toggle("logo-full", cfg.logoFull); }
   });
   let hideT; document.addEventListener("mousemove", () => { document.body.classList.add("show-cursor"); clearTimeout(hideT); hideT = setTimeout(() => document.body.classList.remove("show-cursor"), 2500); });
   applyCfg({});
