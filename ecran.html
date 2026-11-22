@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Groove In — Écran public</title>
+<style>
+  :root { --bg: #000; --fg: #fff; --fs: 5vh; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; cursor: none; }
+  body.show-cursor { cursor: default; }
+  #scroller { position: absolute; inset: 0; overflow-y: scroll; scrollbar-width: none; padding: 12vh 6vw 40vh; scroll-behavior: smooth; }
+  #scroller::-webkit-scrollbar { display: none; }
+  .song { margin-bottom: 18vh; text-align: center; }
+  .song h1 { font-size: calc(var(--fs) * 0.6); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; opacity: .55; margin: 0 0 4vh; }
+  .song p { font-size: var(--fs); line-height: 1.32; font-weight: 700; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .song p.gap { height: calc(var(--fs) * 0.9); }
+  /* Logo en coin */
+  #logo-corner { position: fixed; z-index: 5; display: none; pointer-events: none; }
+  #logo-corner img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+  /* Logo plein écran */
+  #logo-full { position: fixed; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center; background: var(--bg); }
+  #logo-full img { max-width: 70vw; max-height: 70vh; object-fit: contain; }
+  body.logo-full #logo-full { display: flex; }
+  #wait { position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; text-align: center;
+    font-size: 3vh; opacity: .6; padding: 0 10vw; }
+  #hint { position: fixed; left: 0; right: 0; bottom: 2vh; z-index: 20; text-align: center; font-size: 2vh; opacity: 0; transition: opacity .4s; }
+  body.show-cursor #hint { opacity: .55; }
+</style>
+</head>
+<body>
+<div id="scroller"></div>
+<div id="logo-corner"><img id="logo-corner-img" alt=""></div>
+<div id="logo-full"><img id="logo-full-img" alt=""></div>
+<div id="wait">En attente de l'application Groove In…<br>(cette fenêtre se remplit toute seule)</div>
+<div id="hint">Double-clic = plein écran · + / − = taille du texte · L = logo</div>
+<script>
+(function () {
+  const sc = document.getElementById("scroller");
+  const cornerEl = document.getElementById("logo-corner");
+  const cornerImg = document.getElementById("logo-corner-img");
+  const fullImg = document.getElementById("logo-full-img");
+  const waitEl = document.getElementById("wait");
+  let cfg = {}, localFs = null, lastRatio = 0;
+  const opener = window.opener;
+
+  function contrast(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || ""); if (!m) return "#fff";
+    const n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? "#000" : "#fff";
+  }
+  function applyCfg(c) {
+    cfg = c || {};
+    const bg = cfg.bg || "#000000";
+    document.documentElement.style.setProperty("--bg", bg);
+    document.documentElement.style.setProperty("--fg", contrast(bg));
+    document.documentElement.style.setProperty("--fs", (localFs || cfg.fs || 5) + "vh");
+    const src = cfg.logoSrc || "icon-512.png";
+    cornerImg.src = src; fullImg.src = src;
+    document.body.classList.toggle("logo-full", !!cfg.logoFull);
+    // Logo en coin
+    const pos = cfg.pos || "bottom-right", size = cfg.size || 14;
+    if (pos === "none") { cornerEl.style.display = "none"; }
+    else {
+      cornerEl.style.display = "block";
+      cornerEl.style.cssText = "position:fixed;z-index:5;pointer-events:none;display:block;width:" + size + "vw;height:" + size + "vh;";
+      const v = pos.indexOf("top") === 0 ? "top:2.5vh;" : "bottom:2.5vh;";
+      const h = pos.indexOf("left") > -1 ? "left:2.5vw;" : (pos.indexOf("right") > -1 ? "right:2.5vw;" : "left:50%;transform:translateX(-50%);");
+      cornerEl.style.cssText += v + h;
+      cornerImg.style.objectPosition = pos.indexOf("left") > -1 ? "left" : (pos.indexOf("right") > -1 ? "right" : "center");
+    }
+  }
+  function renderSongs(songs) {
+    const keep = sc.scrollTop;
+    sc.innerHTML = "";
+    (songs || []).forEach(s => {
+      const d = document.createElement("div"); d.className = "song";
+      if (cfg.showTitle !== false && s.title) { const h = document.createElement("h1"); h.textContent = s.title; d.appendChild(h); }
+      (s.lines || []).forEach(l => {
+        const p = document.createElement("p");
+        if (l === "") p.className = "gap"; else p.textContent = l;
+        d.appendChild(p);
+      });
+      sc.appendChild(d);
+    });
+    waitEl.style.display = (songs && songs.length) ? "none" : "flex";
+    if (songs && songs.length) waitEl.style.display = "none"; else waitEl.textContent = "Aucune chanson affichée — choisis une chanson dans Groove In.";
+    sc.style.scrollBehavior = "auto"; sc.scrollTop = keep; setScroll(lastRatio, true); sc.style.scrollBehavior = "";
+  }
+  function setScroll(r, instant) {
+    lastRatio = r;
+    const max = sc.scrollHeight - sc.clientHeight;
+    if (instant) sc.style.scrollBehavior = "auto";
+    sc.scrollTop = Math.max(0, Math.min(1, r)) * max;
+    if (instant) sc.style.scrollBehavior = "";
+  }
+
+  window.addEventListener("message", e => {
+    if (opener && e.source !== opener) return;
+    const d = e.data || {};
+    if (d.type === "public-state") { applyCfg(d.cfg); renderSongs(d.songs); setScroll(d.scroll || 0, true); }
+    else if (d.type === "public-cfg") { applyCfg(d.cfg); }
+    else if (d.type === "public-scroll") { setScroll(d.scroll || 0, false); }
+  });
+  function hello() { try { if (opener) opener.postMessage({ type: "public-hello" }, "*"); } catch (e) {} }
+  hello(); setTimeout(hello, 800);
+  window.addEventListener("resize", () => setScroll(lastRatio, true));
+
+  // Plein écran : double-clic ; + / − taille ; L logo ; F plein écran
+  function toggleFs() {
+    const d = document, el = d.documentElement;
+    if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    else (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+  }
+  document.addEventListener("dblclick", toggleFs);
+  document.addEventListener("keydown", e => {
+    if (e.key === "f" || e.key === "F") toggleFs();
+    else if (e.key === "+" || e.key === "=") { localFs = Math.min(12, (localFs || cfg.fs || 5) + 0.4); document.documentElement.style.setProperty("--fs", localFs + "vh"); setScroll(lastRatio, true); }
+    else if (e.key === "-" || e.key === "_") { localFs = Math.max(2, (localFs || cfg.fs || 5) - 0.4); document.documentElement.style.setProperty("--fs", localFs + "vh"); setScroll(lastRatio, true); }
+    else if (e.key === "l" || e.key === "L") { cfg.logoFull = !cfg.logoFull; document.body.classList.toggle("logo-full", cfg.logoFull); }
+  });
+  let hideT; document.addEventListener("mousemove", () => { document.body.classList.add("show-cursor"); clearTimeout(hideT); hideT = setTimeout(() => document.body.classList.remove("show-cursor"), 2500); });
+  applyCfg({});
+})();
+</script>
+</body>
+</html>

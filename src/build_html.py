@@ -519,6 +519,7 @@ HTML = r"""<!DOCTYPE html>
         <button class="btn ghost stage-hide" onclick="addCurrentToSetlist()">+ Setlist</button>
         <button class="btn ghost stage-hide setlist-toggle" onclick="toggleSetlistPanel()" title="Afficher la setlist" aria-label="Setlist">📋 Set</button>
         <button class="btn ghost stage-hide" id="singers-btn" onclick="openSingersModal()" title="Configurer les chanteurs">🎤<span id="singers-btn-count" style="margin-left:3px;font-size:11px;font-weight:700"></span></button>
+        <button class="btn ghost" id="public-btn" onclick="openPublicModal()" title="Écran public : paroles seules + logo sur les autres écrans">📺 Public</button>
         <button class="btn icon ghost" id="fullscreen-btn" onclick="toggleFullscreen()" title="Plein écran (F)">⛶</button>
         <button class="btn exit-set" id="exit-set-btn" onclick="exitSetlistPlay()" title="Quitter le set et revenir aux menus">✕ Quitter le set</button>
         <button class="btn primary" id="stage-btn" onclick="toggleStage()">🎤 Scène</button>
@@ -603,6 +604,40 @@ F   C   G   Am
 <!-- SINGERS CONFIG MODAL -->
 <div id="toast"></div>
 <!-- FICHE INFOS -->
+<div class="modal-bg" id="public-modal">
+  <div class="modal" style="max-width:560px;">
+    <span class="close" onclick="closePublicModal()">&#xd7;</span>
+    <h2>📺 Écran public</h2>
+    <p style="margin:0 0 12px;font-size:13px;opacity:.75">Une 2<sup>e</sup> fenêtre n'affiche que les <strong>paroles</strong> (sans accords) et un <strong>logo</strong>. Glisse-la sur l'écran branché au répartiteur HDMI, puis double-clique dedans pour le plein écran.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn primary" onclick="publicOpen()">📺 Ouvrir / ramener l'écran public</button>
+      <button class="btn ghost" id="public-logofull-btn" onclick="publicToggleLogoFull()">🖼 Logo en plein écran</button>
+    </div>
+    <div class="info-grid">
+      <div style="grid-column:1/-1">
+        <label>Logo</label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <img id="public-logo-preview" alt="" style="height:56px;max-width:140px;object-fit:contain;background:#222;border-radius:6px;padding:4px">
+          <label class="btn ghost" style="cursor:pointer;margin:0">Choisir une image…<input type="file" accept="image/*" style="display:none" onchange="publicLoadLogo(this.files[0]); this.value=''"></label>
+          <button class="btn ghost" onclick="publicResetLogo()">Logo Groove In</button>
+        </div>
+      </div>
+      <div><label for="public-pos">Position du logo</label>
+        <select id="public-pos" onchange="publicSetting('pos', this.value)">
+          <option value="bottom-right">En bas à droite</option><option value="bottom-left">En bas à gauche</option>
+          <option value="top-right">En haut à droite</option><option value="top-left">En haut à gauche</option>
+          <option value="bottom-center">En bas au centre</option><option value="top-center">En haut au centre</option>
+          <option value="none">Pas de logo pendant les paroles</option>
+        </select></div>
+      <div><label for="public-size">Taille du logo</label><input id="public-size" type="range" min="6" max="35" step="1" oninput="publicSetting('size', +this.value)"></div>
+      <div><label for="public-bg">Couleur de fond</label><input id="public-bg" type="color" oninput="publicSetting('bg', this.value)"></div>
+      <div><label for="public-fs">Taille du texte</label><input id="public-fs" type="range" min="2.5" max="10" step="0.1" oninput="publicSetting('fs', +this.value)"></div>
+      <div style="grid-column:1/-1"><label style="display:flex;gap:8px;align-items:center"><input id="public-title" type="checkbox" onchange="publicSetting('showTitle', this.checked)" style="width:auto"> Afficher le titre de chaque chanson</label></div>
+    </div>
+    <p style="margin:12px 0 0;font-size:12px;opacity:.6">Raccourci : touche <strong>L</strong> = logo plein écran / retour aux paroles. Les réglages sont mémorisés sur cet ordinateur.</p>
+  </div>
+</div>
+
 <div class="modal-bg" id="info-modal">
   <div class="modal" style="max-width:600px;">
     <span class="close" onclick="closeInfoModal()">&#xd7;</span>
@@ -2566,6 +2601,105 @@ if (state.gasUrl) {
   });
 })();
 
+// ===== ÉCRAN PUBLIC : paroles seules (sans accords) + logo, dans une 2e fenêtre =====
+const PUBLIC_KEY = "groovein_public_v1";
+const PUBLIC_DEFAULTS = { logoSrc: "", pos: "bottom-right", size: 14, bg: "#000000", fs: 5, showTitle: true, logoFull: false };
+let publicCfg = Object.assign({}, PUBLIC_DEFAULTS);
+try { Object.assign(publicCfg, JSON.parse(localStorage.getItem(PUBLIC_KEY) || "{}")); } catch (e) {}
+let publicWin = null;
+function publicSave() { try { localStorage.setItem(PUBLIC_KEY, JSON.stringify(publicCfg)); } catch (e) { alert("Image trop lourde pour être mémorisée : choisis un logo plus léger."); } }
+function publicIsOpen() { return publicWin && !publicWin.closed; }
+function publicPost(msg) { if (publicIsOpen()) { try { publicWin.postMessage(msg, "*"); } catch (e) {} } }
+function isSectionLine(trimmed) { return /^\[?\s*(intro|verse|chorus|bridge|refrain|pont|pre[- ]?chorus|interlude|outro|hook|solo|couplet|arp[eè]ges?|tab)\s*\d*\s*:?\s*\]?$/i.test(trimmed); }
+// Paroles seules : on retire les accords, tablatures et titres de section
+function lyricsOnly(body) {
+  const out = [];
+  (body || "").split("\n").forEach(line => {
+    const t = line.trim();
+    if (t === "") { if (out.length && out[out.length - 1] !== "") out.push(""); return; }
+    if (isSectionLine(t) || isTabLine(line) || isChordLine(t)) return;
+    out.push(t);
+  });
+  while (out.length && out[out.length - 1] === "") out.pop();
+  return out;
+}
+function publicSongs() {
+  const app = document.getElementById("app");
+  let ids = [];
+  if (app.classList.contains("setlist-mode")) { const sl = state.setlists[state.currentSetlistId]; ids = sl ? sl.songIds : []; }
+  else if (state.currentSongId) ids = [state.currentSongId];
+  return ids.map(id => state.songs.find(s => s.id === id)).filter(Boolean).map(s => ({ title: s.title, lines: lyricsOnly(s.body_full) }));
+}
+function publicScrollRatio() {
+  const el = document.getElementById("song-body");
+  if (!el) return 0;
+  const max = el.scrollHeight - el.clientHeight;
+  return max > 0 ? el.scrollTop / max : 0;
+}
+function publicCfgForSend() { return Object.assign({}, publicCfg, { logoSrc: publicCfg.logoSrc || "" }); }
+function publicSync() {
+  if (!publicIsOpen()) return;
+  publicPost({ type: "public-state", songs: publicSongs(), scroll: publicScrollRatio(), cfg: publicCfgForSend() });
+}
+let _pubScrollTick = false;
+document.getElementById("song-body").addEventListener("scroll", () => {
+  if (!publicIsOpen() || _pubScrollTick) return;
+  _pubScrollTick = true;
+  requestAnimationFrame(() => { _pubScrollTick = false; publicPost({ type: "public-scroll", scroll: publicScrollRatio() }); });
+});
+window.addEventListener("message", e => { if (publicIsOpen() && e.source === publicWin && e.data && e.data.type === "public-hello") publicSync(); });
+function publicOpen() {
+  if (publicIsOpen()) { publicWin.focus(); publicSync(); return; }
+  const url = new URL("ecran.html", location.href).href;
+  publicWin = window.open(url, "grooveinPublic", "popup=yes,width=1280,height=720");
+  if (!publicWin) { alert("Le navigateur a bloqué la fenêtre. Autorise les fenêtres pop-up pour ce site, puis réessaie."); return; }
+  // Chrome : place automatiquement la fenêtre sur un autre écran, si l'autorisation est donnée
+  if (window.getScreenDetails) {
+    window.getScreenDetails().then(d => {
+      const other = d.screens.find(sc => sc !== d.currentScreen);
+      if (other && publicIsOpen()) { publicWin.moveTo(other.availLeft, other.availTop); publicWin.resizeTo(other.availWidth, other.availHeight); }
+    }).catch(() => {});
+  }
+  setTimeout(publicSync, 600);
+}
+function publicSetting(k, v) { publicCfg[k] = v; publicSave(); publicPost({ type: "public-cfg", cfg: publicCfgForSend() }); }
+function publicToggleLogoFull() { publicSetting("logoFull", !publicCfg.logoFull); refreshPublicModal(); }
+function publicResetLogo() { publicSetting("logoSrc", ""); refreshPublicModal(); }
+function publicLoadLogo(file) {
+  if (!file) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 800 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      publicSetting("logoSrc", c.toDataURL("image/png")); refreshPublicModal();
+    };
+    img.onerror = () => alert("Image illisible. Essaie un PNG ou un JPG.");
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+function refreshPublicModal() {
+  document.getElementById("public-logo-preview").src = publicCfg.logoSrc || "icon-512.png";
+  document.getElementById("public-pos").value = publicCfg.pos;
+  document.getElementById("public-size").value = publicCfg.size;
+  document.getElementById("public-bg").value = publicCfg.bg;
+  document.getElementById("public-fs").value = publicCfg.fs;
+  document.getElementById("public-title").checked = publicCfg.showTitle !== false;
+  const b = document.getElementById("public-logofull-btn");
+  b.textContent = publicCfg.logoFull ? "📝 Revenir aux paroles" : "🖼 Logo en plein écran";
+}
+function openPublicModal() { refreshPublicModal(); document.getElementById("public-modal").classList.add("show"); }
+function closePublicModal() { document.getElementById("public-modal").classList.remove("show"); }
+// Resynchronise l'écran public à chaque changement de chanson / de set
+(function () {
+  const rs = renderSong, rf = renderSetlistFlow;
+  renderSong = function () { const r = rs.apply(this, arguments); publicSync(); return r; };
+  renderSetlistFlow = function () { const r = rf.apply(this, arguments); publicSync(); return r; };
+})();
+
 document.addEventListener("keydown", e => {
   // Ne pas intercepter les touches quand on saisit du texte
   const tag = (e.target && e.target.tagName) || "";
@@ -2573,7 +2707,8 @@ document.addEventListener("keydown", e => {
 
   if (e.key === "Escape") {
     const app = document.getElementById("app");
-    if (document.getElementById("settings-modal").classList.contains("show")) closeSettings();
+    if (document.getElementById("public-modal").classList.contains("show")) closePublicModal();
+    else if (document.getElementById("settings-modal").classList.contains("show")) closeSettings();
     else if (document.getElementById("add-modal").classList.contains("show")) closeAddSong();
     else if (document.getElementById("info-modal").classList.contains("show")) closeInfoModal();
     else if (document.getElementById("singers-modal").classList.contains("show")) closeSingersModal();
@@ -2591,6 +2726,7 @@ document.addEventListener("keydown", e => {
     if (e.key === "-" || e.key === "_") { e.preventDefault(); changeScrollSpeed(-5); return; }
     if (e.key === "r" || e.key === "R") { e.preventDefault(); resetScroll(); return; }
     if (e.key === "f" || e.key === "F") { e.preventDefault(); toggleFullscreen(); return; }
+    if ((e.key === "l" || e.key === "L") && publicIsOpen()) { e.preventDefault(); publicToggleLogoFull(); return; }
   }
 
   // Pédale / clavier : flèches et Page haut/bas = défilement d'un écran (comme une tourne-page).
